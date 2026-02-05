@@ -173,7 +173,7 @@ const Navbar = () => {
                   <div className="relative w-10 h-10 lg:w-12 lg:h-12">
                     {/* Replace "/logo.png" with your actual logo path */}
                     <Image
-                      src="/logo.png"
+                      src="/Logo.png"
                       alt="Ruchi Bazaar Logo"
                       fill
                       style={{ objectFit: 'contain' }}
