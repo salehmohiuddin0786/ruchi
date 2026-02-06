@@ -96,7 +96,6 @@ const Navbar = () => {
   const navItems = [
     { label: "Home", icon: "🏠", path: "/" },
     { label: "Restaurants", icon: "🍕", path: "/Restaurants" },
-    { label: "Groceries", icon: "🛒", path: "/Groceries" },
     { label: "Offers", icon: "🎁", path: "/Offers" },
     { label: "Orders", icon: "📋", path: "/Orders" },
     { label: "Cart", icon: "🛍️", path: "/Cart", badge: true },
@@ -224,7 +223,7 @@ const Navbar = () => {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onFocus={() => setShowSearchSuggestions(true)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Search restaurants, groceries, dishes..."
+                  placeholder="Search restaurants, dishes..."
                   className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
                 />
                 {searchQuery && (
