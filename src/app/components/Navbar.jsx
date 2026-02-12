@@ -14,6 +14,17 @@ import {
   Clock,
   ChevronDown,
   User,
+  Home,
+  Store,
+  Tag,
+  ClipboardList,
+  ShoppingCart,
+  Pizza,
+  Beef,
+  Fish,
+  Salad,
+  Cake,
+  Coffee,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -28,10 +39,12 @@ const Navbar = () => {
   const [showLocationMenu, setShowLocationMenu] = useState(false);
   const [cartItemsCount] = useState(3);
   const [userLocation, setUserLocation] = useState("New York, NY");
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
 
   const searchRef = useRef(null);
   const menuRef = useRef(null);
   const locationRef = useRef(null);
+  const mobileSearchRef = useRef(null);
 
   // SCROLL SHADOW
   useEffect(() => {
@@ -46,6 +59,9 @@ const Navbar = () => {
       if (searchRef.current && !searchRef.current.contains(e.target)) {
         setShowSearchSuggestions(false);
       }
+      if (mobileSearchRef.current && !mobileSearchRef.current.contains(e.target) && isMobileSearchOpen) {
+        setIsMobileSearchOpen(false);
+      }
       if (menuRef.current && !menuRef.current.contains(e.target) && isMenuOpen) {
         setIsMenuOpen(false);
       }
@@ -55,12 +71,26 @@ const Navbar = () => {
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [isMenuOpen]);
+  }, [isMenuOpen, isMobileSearchOpen]);
+
+  // PREVENT BODY SCROLL WHEN MOBILE MENU IS OPEN
+  useEffect(() => {
+    if (isMenuOpen || isMobileSearchOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isMenuOpen, isMobileSearchOpen]);
 
   // NAVIGATION
   const navigateTo = (path) => {
     router.push(path);
     setIsMenuOpen(false);
+    setIsMobileSearchOpen(false);
+    setShowSearchSuggestions(false);
   };
 
   // SEARCH HANDLER
@@ -69,6 +99,7 @@ const Navbar = () => {
       router.push(`/search?q=${encodeURIComponent(query)}`);
       setSearchQuery("");
       setShowSearchSuggestions(false);
+      setIsMobileSearchOpen(false);
     }
   };
 
@@ -92,13 +123,13 @@ const Navbar = () => {
     localStorage.setItem("userLocation", location.name);
   };
 
-  // NAV DATA
+  // NAV DATA with Lucide icons
   const navItems = [
-    { label: "Home", icon: "🏠", path: "/" },
-    { label: "Restaurants", icon: "🍕", path: "/Restaurants" },
-    { label: "Offers", icon: "🎁", path: "/Offers" },
-    { label: "Orders", icon: "📋", path: "/Orders" },
-    { label: "Cart", icon: "🛍️", path: "/Cart", badge: true },
+    { label: "Home", icon: Home, path: "/" },
+    { label: "Restaurants", icon: Store, path: "/Restaurants" },
+    { label: "Offers", icon: Tag, path: "/Offers" },
+    { label: "Orders", icon: ClipboardList, path: "/Orders" },
+    { label: "Cart", icon: ShoppingBag, path: "/Cart", badge: true },
   ];
 
   const searchSuggestions = [
@@ -111,66 +142,66 @@ const Navbar = () => {
   ];
 
   const popularCategories = [
-    { name: "Pizza", icon: "🍕" },
-    { name: "Burger", icon: "🍔" },
-    { name: "Sushi", icon: "🍣" },
-    { name: "Salad", icon: "🥗" },
-    { name: "Dessert", icon: "🍰" },
-    { name: "Coffee", icon: "☕" },
+    { name: "Pizza", icon: Pizza },
+    { name: "Burger", icon: Beef },
+    { name: "Sushi", icon: Fish },
+    { name: "Salad", icon: Salad },
+    { name: "Dessert", icon: Cake },
+    { name: "Coffee", icon: Coffee },
   ];
 
   return (
     <>
       {/* PROMO BANNER */}
       <div className="bg-gradient-to-r from-red-500 to-orange-500 text-white py-2 px-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center text-sm">
-          <div className="flex items-center gap-4 flex-wrap">
+        <div className="max-w-7xl mx-auto flex justify-between items-center text-xs sm:text-sm">
+          <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <Truck size={16} className="animate-pulse" />
-              <span>🚀 30 min Delivery</span>
+              <Truck size={14} className="sm:w-4 sm:h-4 animate-pulse" />
+              <span className="whitespace-nowrap">30 min Delivery</span>
             </div>
-            <span className="hidden sm:inline">|</span>
-            <div className="hidden sm:flex items-center gap-1.5">
-              <Gift size={16} />
-              <span>50% OFF First Order</span>
+            <span className="hidden xs:inline text-white/80">|</span>
+            <div className="hidden xs:flex items-center gap-1.5">
+              <Gift size={14} className="sm:w-4 sm:h-4" />
+              <span className="whitespace-nowrap">50% OFF First Order</span>
             </div>
           </div>
           <button 
             onClick={() => navigateTo("/orders")}
-            className="font-medium hover:text-gray-100 transition-colors"
+            className="font-medium hover:text-white/80 transition-colors whitespace-nowrap ml-2"
           >
-            Order Now →
+            Order Now <span className="hidden xs:inline">→</span>
           </button>
         </div>
       </div>
 
       {/* MAIN NAVBAR */}
       <nav
-        className={`sticky top-0 z-50 bg-white border-b transition-shadow duration-200 ${isScrolled ? "shadow-lg" : ""}`}
+        className={`sticky top-0 z-50 bg-white border-b border-gray-200 transition-shadow duration-200 ${
+          isScrolled ? "shadow-lg" : ""
+        } ${isMobileSearchOpen ? "shadow-lg" : ""}`}
       >
         <div className="max-w-7xl mx-auto px-4">
           {/* TOP ROW */}
-          <div className="h-16 lg:h-20 flex items-center justify-between">
-            {/* LEFT: LOGO & MENU */}
-            <div className="flex items-center gap-4 lg:gap-6">
+          <div className="h-14 sm:h-16 lg:h-20 flex items-center justify-between">
+            {/* LEFT: Mobile Menu Button & Desktop Logo/Nav */}
+            <div className="flex items-center gap-2 sm:gap-4 lg:gap-6">
               {/* Mobile Menu Button */}
               <button
-                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-900"
+                onClick={() => setIsMenuOpen(true)}
                 aria-label="Toggle menu"
               >
-                {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                <Menu size={20} className="sm:w-6 sm:h-6" />
               </button>
 
-              {/* Logo */}
+              {/* Logo - Hidden on mobile, visible on desktop */}
               <button
                 onClick={() => navigateTo("/")}
-                className="flex items-center gap-3 group"
+                className="hidden lg:flex items-center gap-2 sm:gap-3 group"
               >
-                {/* Logo Image */}
                 <div className="flex items-center">
-                  <div className="relative w-10 h-10 lg:w-12 lg:h-12">
-                    {/* Replace "/logo.png" with your actual logo path */}
+                  <div className="relative w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12">
                     <Image
                       src="/Logo.png"
                       alt="Ruchi Bazaar Logo"
@@ -182,13 +213,13 @@ const Navbar = () => {
                   </div>
                 </div>
                 
-                {/* Brand Text */}
-                <div className="hidden sm:block">
-                  <h1 className="text-xl lg:text-2xl font-black text-gray-900">
+                {/* Brand Text - Desktop only */}
+                <div className="hidden xs:block">
+                  <h1 className="text-base sm:text-xl lg:text-2xl font-black text-gray-900 leading-tight">
                     Ruchi Bazaar
                   </h1>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <Clock size={12} className="text-red-500" />
+                  <div className="flex items-center gap-1 text-[10px] sm:text-xs text-gray-600">
+                    <Clock size={10} className="sm:w-3 sm:h-3 text-red-500" />
                     <span>Fresh & Fast</span>
                   </div>
                 </div>
@@ -196,26 +227,52 @@ const Navbar = () => {
 
               {/* Desktop Navigation */}
               <div className="hidden lg:flex items-center gap-1">
-                {navItems.slice(0, 5).map((item) => (
-                  <button
-                    key={item.path}
-                    onClick={() => navigateTo(item.path)}
-                    className={`px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${pathname === item.path
-                        ? "bg-red-50 text-red-600"
-                        : "text-gray-700 hover:text-red-600 hover:bg-red-50"
+                {navItems.slice(0, 5).map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={() => navigateTo(item.path)}
+                      className={`px-3 xl:px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${
+                        pathname === item.path
+                          ? "bg-red-50 text-red-600"
+                          : "text-gray-900 hover:text-red-600 hover:bg-red-50"
                       }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+                    >
+                      <Icon size={18} className={pathname === item.path ? "text-red-600" : "text-gray-900"} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
+            </div>
+
+            {/* CENTER: Mobile Brand Name - Centered */}
+            <div className="lg:hidden absolute left-1/2 transform -translate-x-1/2">
+              <button
+                onClick={() => navigateTo("/")}
+                className="flex items-center gap-2"
+              >
+                <div className="relative w-7 h-7 sm:w-8 sm:h-8">
+                  <Image
+                    src="/Logo.png"
+                    alt="Ruchi Bazaar Logo"
+                    fill
+                    style={{ objectFit: 'contain' }}
+                    priority
+                  />
+                </div>
+                <span className="font-black text-base sm:text-lg text-gray-900">
+                  Ruchi Bazaar
+                </span>
+              </button>
             </div>
 
             {/* CENTER: SEARCH (DESKTOP) */}
             <div className="hidden lg:block flex-1 max-w-2xl mx-6" ref={searchRef}>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search className="w-5 h-5 text-gray-400" />
+                  <Search className="w-5 h-5 text-gray-500" />
                 </div>
                 <input
                   type="text"
@@ -224,22 +281,22 @@ const Navbar = () => {
                   onFocus={() => setShowSearchSuggestions(true)}
                   onKeyPress={handleKeyPress}
                   placeholder="Search restaurants, dishes..."
-                  className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                  className="w-full pl-10 pr-10 py-2.5 lg:py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 text-gray-900 placeholder-gray-500"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
                     className="absolute inset-y-0 right-0 pr-3 flex items-center"
                   >
-                    <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                    <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
                   </button>
                 )}
                 
                 {/* Search Suggestions */}
                 {showSearchSuggestions && (
-                  <div className="absolute top-full mt-2 w-full bg-white rounded-xl shadow-lg border z-50 overflow-hidden">
-                    <div className="p-4">
-                      <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                  <div className="absolute top-full mt-2 w-full bg-white rounded-xl shadow-lg border border-gray-200 z-50 overflow-hidden">
+                    <div className="p-4 max-h-96 overflow-y-auto">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3">
                         Popular Searches
                       </h3>
                       <div className="space-y-2">
@@ -250,14 +307,14 @@ const Navbar = () => {
                               setSearchQuery(suggestion.text);
                               handleSearch(suggestion.text);
                             }}
-                            className="flex items-center gap-3 w-full p-2 hover:bg-red-50 rounded-lg transition-colors text-left"
+                            className="flex items-center gap-3 w-full p-2 hover:bg-gray-50 rounded-lg transition-colors text-left"
                           >
-                            <Search className="w-4 h-4 text-gray-400" />
+                            <Search className="w-4 h-4 text-gray-500" />
                             <div>
                               <div className="font-medium text-gray-900">
                                 {suggestion.text}
                               </div>
-                              <div className="text-xs text-gray-500 capitalize">
+                              <div className="text-xs text-gray-600 capitalize">
                                 {suggestion.type}
                               </div>
                             </div>
@@ -271,38 +328,39 @@ const Navbar = () => {
             </div>
 
             {/* RIGHT: ACTIONS */}
-            <div className="flex items-center gap-3 lg:gap-4">
+            <div className="flex items-center gap-1 sm:gap-2 lg:gap-4">
               {/* Desktop Location */}
               <div className="hidden lg:block relative" ref={locationRef}>
                 <button
                   onClick={() => setShowLocationMenu(!showLocationMenu)}
-                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-900"
                 >
                   <MapPin className="w-5 h-5 text-red-500" />
                   <div className="text-left">
                     <div className="text-sm font-semibold">Location</div>
-                    <div className="text-xs text-gray-500 truncate max-w-[120px]">
+                    <div className="text-xs text-gray-600 truncate max-w-[120px]">
                       {userLocation}
                     </div>
                   </div>
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                  <ChevronDown className="w-4 h-4 text-gray-600" />
                 </button>
 
                 {/* Location Dropdown */}
                 {showLocationMenu && (
-                  <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-lg border z-50 overflow-hidden">
+                  <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50 overflow-hidden">
                     <div className="p-3">
-                      <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-2">
                         Select Location
                       </h3>
                       {locations.map((location) => (
                         <button
                           key={location.id}
                           onClick={() => handleLocationSelect(location)}
-                          className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 last:mb-0 transition-colors ${userLocation === location.name
+                          className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 last:mb-0 transition-colors ${
+                            userLocation === location.name
                               ? "bg-red-50 text-red-600 font-medium"
-                              : "hover:bg-gray-100 text-gray-700"
-                            }`}
+                              : "hover:bg-gray-100 text-gray-900"
+                          }`}
                         >
                           {location.name}
                         </button>
@@ -318,18 +376,18 @@ const Navbar = () => {
                 className="hidden lg:flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
                 aria-label="Favorites"
               >
-                <Heart className="w-5 h-5 text-gray-600" />
+                <Heart className="w-5 h-5 text-gray-900" />
               </button>
 
               {/* Cart */}
               <button
                 onClick={() => navigateTo("/cart")}
-                className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="relative p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-900"
                 aria-label="Cart"
               >
-                <ShoppingBag className="w-6 h-6" />
+                <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6" />
                 {cartItemsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center">
                     {cartItemsCount}
                   </span>
                 )}
@@ -347,76 +405,159 @@ const Navbar = () => {
 
               {/* Mobile Search Button */}
               <button
-                onClick={() => setShowSearchSuggestions(true)}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+                onClick={() => setIsMobileSearchOpen(true)}
+                className="lg:hidden p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 text-gray-900"
                 aria-label="Search"
               >
-                <Search className="w-5 h-5" />
+                <Search className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
           </div>
+        </div>
 
-          {/* MOBILE SEARCH & CATEGORIES */}
-          <div className="lg:hidden py-3 border-t" ref={searchRef}>
-            {/* Search Bar */}
-            <div className="relative mb-3">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="w-5 h-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setShowSearchSuggestions(true)}
-                onKeyPress={handleKeyPress}
-                placeholder="What would you like to order?"
-                className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
-              />
-              {searchQuery && (
+        {/* MOBILE SEARCH OVERLAY */}
+        {isMobileSearchOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 bg-white" ref={mobileSearchRef}>
+            <div className="flex flex-col h-full">
+              {/* Search Header */}
+              <div className="flex items-center gap-3 p-4 border-b border-gray-200">
                 <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  onClick={() => {
+                    setIsMobileSearchOpen(false);
+                    setSearchQuery("");
+                    setShowSearchSuggestions(false);
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg text-gray-900"
+                  aria-label="Close search"
                 >
-                  <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                  <X className="w-6 h-6" />
                 </button>
-              )}
-            </div>
+                <div className="flex-1 relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="w-5 h-5 text-gray-500" />
+                  </div>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => setShowSearchSuggestions(true)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Search restaurants, dishes..."
+                    className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 text-gray-900 placeholder-gray-500"
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    >
+                      <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
+                    </button>
+                  )}
+                </div>
+              </div>
 
-            {/* Categories */}
-            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-              {popularCategories.map((category, index) => (
+              {/* Search Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {/* Popular Categories */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                    Popular Categories
+                  </h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    {popularCategories.map((category, index) => {
+                      const Icon = category.icon;
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            router.push(`/category/${category.name.toLowerCase()}`);
+                            setIsMobileSearchOpen(false);
+                          }}
+                          className="flex flex-col items-center gap-2 p-3 bg-gray-50 hover:bg-red-50 rounded-xl transition-colors"
+                        >
+                          <Icon className="w-6 h-6 text-gray-900" />
+                          <span className="text-xs font-medium text-gray-900">{category.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Search Suggestions */}
+                {showSearchSuggestions && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                      Popular Searches
+                    </h3>
+                    <div className="space-y-2">
+                      {searchSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.id}
+                          onClick={() => {
+                            setSearchQuery(suggestion.text);
+                            handleSearch(suggestion.text);
+                          }}
+                          className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
+                        >
+                          <Search className="w-4 h-4 text-gray-500" />
+                          <div>
+                            <div className="font-medium text-gray-900">
+                              {suggestion.text}
+                            </div>
+                            <div className="text-xs text-gray-600 capitalize">
+                              {suggestion.type}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MOBILE CATEGORIES STRIP */}
+        <div className="lg:hidden px-4 pb-3">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {popularCategories.map((category, index) => {
+              const Icon = category.icon;
+              return (
                 <button
                   key={index}
                   onClick={() => router.push(`/category/${category.name.toLowerCase()}`)}
                   className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-red-100 rounded-full transition-colors whitespace-nowrap flex-shrink-0"
                 >
-                  <span className="text-lg">{category.icon}</span>
-                  <span className="text-sm font-medium">{category.name}</span>
+                  <Icon className="w-4 h-4 text-gray-900" />
+                  <span className="text-sm font-medium text-gray-900">{category.name}</span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
+      </nav>
 
-        {/* MOBILE SIDEBAR MENU */}
-        {isMenuOpen && (
-          <div className="lg:hidden fixed inset-0 z-50" ref={menuRef}>
-            {/* Backdrop */}
-            <div
-              className="absolute inset-0 bg-black/50"
-              onClick={() => setIsMenuOpen(false)}
-            />
-            
-            {/* Sidebar */}
-            <div className="absolute left-0 top-0 w-80 h-full bg-white shadow-xl">
-              <div className="h-full flex flex-col">
-                {/* Header */}
-                <div className="p-6 border-b">
-                  <div className="flex items-center gap-3 mb-6">
-                    {/* Logo in Mobile Menu */}
+      {/* MOBILE SIDEBAR MENU - FIXED: No harsh black background */}
+      {isMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-50" ref={menuRef}>
+          {/* Backdrop - Modern frosted glass effect instead of harsh black */}
+          <div
+            className="absolute inset-0 bg-gray-900/20 backdrop-blur-md animate-fadeIn"
+            onClick={() => setIsMenuOpen(false)}
+          />
+          
+          {/* Sidebar */}
+          <div className="absolute left-0 top-0 w-80 max-w-[90%] h-full bg-white shadow-xl animate-slideIn">
+            <div className="h-full flex flex-col">
+              {/* Header */}
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
                     <div className="relative w-12 h-12">
                       <Image
-                        src="/logo.png"
+                        src="/Logo.png"
                         alt="Ruchi Bazaar Logo"
                         fill
                         style={{ objectFit: 'contain' }}
@@ -425,80 +566,124 @@ const Navbar = () => {
                     </div>
                     <div>
                       <h2 className="font-bold text-gray-900 text-lg">Ruchi Bazaar</h2>
-                      <p className="text-sm text-gray-500">Fresh & Fast</p>
+                      <p className="text-sm text-gray-600">Fresh & Fast</p>
                     </div>
                   </div>
-                  
-                  {/* User Info */}
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-500 rounded-full flex items-center justify-center">
-                      <User className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <p className="font-semibold">Welcome Back!</p>
-                      <p className="text-sm text-gray-500">Sign in for better experience</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Navigation */}
-                <div className="flex-1 overflow-y-auto p-4">
-                  {navItems.map((item) => (
-                    <button
-                      key={item.path}
-                      onClick={() => navigateTo(item.path)}
-                      className={`flex items-center gap-4 w-full p-3 rounded-lg mb-2 transition-colors ${pathname === item.path
-                          ? "bg-red-50 text-red-600 font-semibold"
-                          : "hover:bg-gray-100 text-gray-700"
-                        }`}
-                    >
-                      <span className="text-2xl">{item.icon}</span>
-                      <span className="text-lg">{item.label}</span>
-                      {item.badge && cartItemsCount > 0 && (
-                        <span className="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                          {cartItemsCount}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Footer */}
-                <div className="p-6 border-t">
                   <button
-                    onClick={() => navigateTo("/orders")}
-                    className="w-full py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white font-semibold rounded-lg hover:from-red-600 hover:to-orange-600 transition-all duration-200"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="p-2 hover:bg-gray-100 rounded-lg text-gray-900"
                   >
-                    Order Now
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
+                
+                {/* User Info */}
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                  <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-500 rounded-full flex items-center justify-center">
+                    <User className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Welcome Back!</p>
+                    <p className="text-sm text-gray-600">Sign in for better experience</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Navigation */}
+              <div className="flex-1 overflow-y-auto py-4">
+                <div className="px-4">
+                  {navItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.path}
+                        onClick={() => navigateTo(item.path)}
+                        className={`flex items-center gap-4 w-full p-3 rounded-lg mb-2 transition-colors ${
+                          pathname === item.path
+                            ? "bg-red-50 text-red-600 font-semibold"
+                            : "hover:bg-gray-100 text-gray-900"
+                        }`}
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span className="text-base">{item.label}</span>
+                        {item.badge && cartItemsCount > 0 && (
+                          <span className="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            {cartItemsCount}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Location in Mobile Menu */}
+                <div className="mt-6 px-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 px-3">
+                    Your Location
+                  </h3>
+                  <div className="space-y-1">
+                    {locations.map((location) => (
+                      <button
+                        key={location.id}
+                        onClick={() => {
+                          handleLocationSelect(location);
+                          setIsMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                          userLocation === location.name
+                            ? "bg-red-50 text-red-600 font-medium"
+                            : "hover:bg-gray-100 text-gray-900"
+                        }`}
+                      >
+                        <MapPin className="w-4 h-4" />
+                        {location.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 border-t border-gray-200">
+                <button
+                  onClick={() => navigateTo("/orders")}
+                  className="w-full py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white font-semibold rounded-lg hover:from-red-600 hover:to-orange-600 transition-all duration-200"
+                >
+                  Order Now
+                </button>
               </div>
             </div>
           </div>
-        )}
-      </nav>
+        </div>
+      )}
 
       {/* MOBILE BOTTOM NAVIGATION */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t shadow-lg">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-lg">
         <div className="grid grid-cols-5 h-16">
-          {navItems.slice(0, 5).map((item) => (
-            <button
-              key={item.path}
-              onClick={() => navigateTo(item.path)}
-              className={`flex flex-col items-center justify-center transition-colors relative ${pathname === item.path
-                  ? "text-red-600"
-                  : "text-gray-500 hover:text-red-500"
+          {navItems.slice(0, 5).map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigateTo(item.path)}
+                className={`flex flex-col items-center justify-center transition-colors relative ${
+                  pathname === item.path
+                    ? "text-red-600"
+                    : "text-gray-900 hover:text-red-600"
                 }`}
-            >
-              <span className="text-2xl">{item.icon}</span>
-              <span className="text-xs font-medium mt-1">{item.label}</span>
-              {item.badge && cartItemsCount > 0 && (
-                <span className="absolute top-1 right-4 bg-red-500 text-white text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                  {cartItemsCount}
+              >
+                <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
+                <span className="text-[10px] sm:text-xs font-medium mt-1">
+                  {item.label}
                 </span>
-              )}
-            </button>
-          ))}
+                {item.badge && cartItemsCount > 0 && (
+                  <span className="absolute -top-1 right-1/4 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                    {cartItemsCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -512,6 +697,31 @@ const Navbar = () => {
         .no-scrollbar {
           -ms-overflow-style: none;
           scrollbar-width: none;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideIn {
+          from { transform: translateX(-100%); }
+          to { transform: translateX(0); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.2s ease-out;
+        }
+        .animate-slideIn {
+          animation: slideIn 0.3s ease-out;
+        }
+        @media (min-width: 480px) {
+          .xs\\:inline {
+            display: inline;
+          }
+          .xs\\:block {
+            display: block;
+          }
+          .xs\\:flex {
+            display: flex;
+          }
         }
       `}</style>
     </>
