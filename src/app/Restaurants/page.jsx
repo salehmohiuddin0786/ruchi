@@ -1,19 +1,22 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
-  Search, Filter, Star, Clock, DollarSign, MapPin, 
+  Search, Filter, Star, Clock, MapPin, 
   ChevronRight, Heart, CheckCircle, Truck, Shield,
   Zap, Flame, Leaf, Sparkles, Award, Coffee, Pizza,
   Sandwich, Salad, Cake, ChefHat, ThumbsUp,
   TrendingUp, ShoppingBag, Navigation, 
   Users, Crown, Rocket, Percent, Tag, ArrowRight,
-  X, UtensilsCrossed, Beef, Fish, IceCream, Coffee as CoffeeIcon
+  X, UtensilsCrossed, IceCream, Coffee as CoffeeIcon,
+  Loader, IndianRupee
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 const RestaurantsPage = () => {
+  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [priceFilter, setPriceFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState(0);
@@ -21,6 +24,79 @@ const RestaurantsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [favorites, setFavorites] = useState(new Set());
+  const [restaurants, setRestaurants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Get currency symbol from environment variables
+  const currencySymbol = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+  // Fetch restaurants from backend
+  useEffect(() => {
+    fetchRestaurants();
+  }, []);
+
+  const fetchRestaurants = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${apiUrl}/Restaurants`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch restaurants');
+      }
+      
+      const data = await response.json();
+      
+      // Transform backend data to match frontend format
+      const transformedData = data.map(restaurant => ({
+        id: restaurant.id,
+        name: restaurant.name,
+        description: restaurant.description || "Authentic cuisine restaurant",
+        address: restaurant.address || "Location available",
+        cuisine: restaurant.cuisine || "Various Cuisine",
+        rating: restaurant.rating || 4.5,
+        reviewCount: restaurant.reviewCount || Math.floor(Math.random() * 1000) + 100,
+        deliveryTime: restaurant.deliveryTime || "25-35 min",
+        deliveryFee: restaurant.deliveryFee ? `${currencySymbol}${restaurant.deliveryFee}` : `${currencySymbol}2.99`,
+        minOrder: restaurant.minOrder ? `${currencySymbol}${restaurant.minOrder}` : `${currencySymbol}15`,
+        tags: restaurant.tags || ["Fresh", "Quality"],
+        priceRange: restaurant.priceRange || "₹₹",
+        distance: restaurant.distance || "1.2 km",
+        featured: restaurant.featured || false,
+        offers: restaurant.offers || ["Special Offer"],
+        color: getRandomColor(),
+        trending: restaurant.trending || false,
+        chefChoice: restaurant.chefChoice || false,
+        healthy: restaurant.healthy || false,
+        spicy: restaurant.spicy || false,
+        isOpen: restaurant.isOpen !== undefined ? restaurant.isOpen : true,
+        image: restaurant.image,
+        ownerId: restaurant.ownerId
+      }));
+      
+      setRestaurants(transformedData);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+      console.error('Error fetching restaurants:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to get random color for cards
+  const getRandomColor = () => {
+    const colors = [
+      "from-orange-100 to-red-100",
+      "from-amber-100 to-yellow-100",
+      "from-blue-50 to-teal-50",
+      "from-emerald-50 to-green-50",
+      "from-red-50 to-orange-50",
+      "from-pink-50 to-rose-50",
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
 
   // Toggle favorite restaurant
   const toggleFavorite = (id) => {
@@ -33,9 +109,14 @@ const RestaurantsPage = () => {
     setFavorites(newFavorites);
   };
 
+  // Navigate to restaurant menu - FIXED: using 'restaurant' not 'resturent'
+  const viewMenu = (restaurantId) => {
+    router.push(`/Restaurants/${restaurantId}`);
+  };
+
   // Categories with Lucide icons only (no emojis)
   const categories = [
-    { id: 'all', label: 'All', count: 45, lucideIcon: UtensilsCrossed },
+    { id: 'all', label: 'All', count: restaurants.length, lucideIcon: UtensilsCrossed },
     { id: 'fast-food', label: 'Fast Food', count: 12, lucideIcon: Sandwich },
     { id: 'italian', label: 'Italian', count: 8, lucideIcon: Pizza },
     { id: 'asian', label: 'Asian', count: 10, lucideIcon: UtensilsCrossed },
@@ -45,12 +126,12 @@ const RestaurantsPage = () => {
     { id: 'coffee', label: 'Cafés', count: 7, lucideIcon: CoffeeIcon },
   ];
 
-  // Price ranges
+  // Price ranges with rupee symbol
   const priceRanges = [
-    { id: 'all', label: 'All Price', icon: DollarSign },
-    { id: 'low', label: '$', description: 'Budget', icon: DollarSign },
-    { id: 'medium', label: '$$', description: 'Moderate', icon: DollarSign },
-    { id: 'high', label: '$$$', description: 'Premium', icon: Crown },
+    { id: 'all', label: 'All Price', icon: IndianRupee },
+    { id: 'low', label: `${currencySymbol}`, description: 'Budget', icon: IndianRupee },
+    { id: 'medium', label: `${currencySymbol}${currencySymbol}`, description: 'Moderate', icon: IndianRupee },
+    { id: 'high', label: `${currencySymbol}${currencySymbol}${currencySymbol}`, description: 'Premium', icon: Crown },
   ];
 
   // Sort options
@@ -58,121 +139,20 @@ const RestaurantsPage = () => {
     { id: 'recommended', label: 'Recommended', icon: ThumbsUp },
     { id: 'rating', label: 'Highest Rated', icon: Star },
     { id: 'delivery-time', label: 'Fastest Delivery', icon: Rocket },
-    { id: 'price-low', label: 'Price: Low to High', icon: DollarSign },
-    { id: 'price-high', label: 'Price: High to Low', icon: TrendingUp },
-  ];
-
-  // Sample restaurants data with no emojis
-  const restaurants = [
-    {
-      id: 1,
-      name: "Pizza Palace",
-      cuisine: "Italian • Pizza",
-      rating: 4.8,
-      reviewCount: 1245,
-      deliveryTime: "20-30 min",
-      deliveryFee: "$2.99",
-      minOrder: "$15",
-      tags: ["Hot & Fresh", "Top Rated", "Free Delivery"],
-      priceRange: "$$",
-      distance: "1.2 mi",
-      featured: true,
-      offers: ["20% OFF", "Free Delivery"],
-      color: "from-orange-100 to-red-100",
-      trending: true,
-    },
-    {
-      id: 2,
-      name: "Burger Hub",
-      cuisine: "American • Burgers",
-      rating: 4.6,
-      reviewCount: 892,
-      deliveryTime: "15-25 min",
-      deliveryFee: "Free",
-      minOrder: "$10",
-      tags: ["Bestseller", "Healthy Options"],
-      priceRange: "$",
-      distance: "0.8 mi",
-      featured: true,
-      offers: ["Buy 1 Get 1 Free"],
-      color: "from-amber-100 to-yellow-100",
-      trending: true,
-    },
-    {
-      id: 3,
-      name: "Sushi Master",
-      cuisine: "Japanese • Sushi",
-      rating: 4.9,
-      reviewCount: 2103,
-      deliveryTime: "30-40 min",
-      deliveryFee: "$3.99",
-      minOrder: "$20",
-      tags: ["Premium", "Authentic"],
-      priceRange: "$$$",
-      distance: "2.1 mi",
-      offers: ["Free Miso Soup"],
-      color: "from-blue-50 to-teal-50",
-      chefChoice: true,
-    },
-    {
-      id: 4,
-      name: "Green Leaf Cafe",
-      cuisine: "Vegetarian • Healthy",
-      rating: 4.7,
-      reviewCount: 567,
-      deliveryTime: "25-35 min",
-      deliveryFee: "Free",
-      minOrder: "$12",
-      tags: ["100% Vegan", "Superfood Salads"],
-      priceRange: "$$",
-      distance: "1.5 mi",
-      offers: ["15% OFF Vegan"],
-      color: "from-emerald-50 to-green-50",
-      healthy: true,
-    },
-    {
-      id: 5,
-      name: "Spice Garden",
-      cuisine: "Indian • Curry",
-      rating: 4.5,
-      reviewCount: 1342,
-      deliveryTime: "35-45 min",
-      deliveryFee: "$1.99",
-      minOrder: "$18",
-      tags: ["Extra Spicy", "Family Favorite"],
-      priceRange: "$$",
-      distance: "2.3 mi",
-      offers: ["Free Naan"],
-      color: "from-red-50 to-orange-50",
-      spicy: true,
-    },
-    {
-      id: 6,
-      name: "Sweet Tooth",
-      cuisine: "Desserts • Bakery",
-      rating: 4.4,
-      reviewCount: 421,
-      deliveryTime: "20-30 min",
-      deliveryFee: "$2.49",
-      minOrder: "$8",
-      tags: ["Artisan Desserts", "Free over $20"],
-      priceRange: "$",
-      distance: "1.8 mi",
-      offers: ["Free Cookie"],
-      color: "from-pink-50 to-rose-50",
-    },
+    { id: 'price-low', label: `Price: Low to High`, icon: IndianRupee },
+    { id: 'price-high', label: `Price: High to Low`, icon: TrendingUp },
   ];
 
   // Filter restaurants based on selections
   const filteredRestaurants = restaurants.filter(restaurant => {
-    if (selectedCategory !== 'all' && selectedCategory !== restaurant.cuisine.toLowerCase().split(' ')[0]) {
+    if (selectedCategory !== 'all' && !restaurant.cuisine.toLowerCase().includes(selectedCategory)) {
       return false;
     }
     
     if (priceFilter !== 'all') {
-      if (priceFilter === 'low' && restaurant.priceRange !== '$') return false;
-      if (priceFilter === 'medium' && restaurant.priceRange !== '$$') return false;
-      if (priceFilter === 'high' && restaurant.priceRange !== '$$$') return false;
+      if (priceFilter === 'low' && restaurant.priceRange !== currencySymbol) return false;
+      if (priceFilter === 'medium' && restaurant.priceRange !== `${currencySymbol}${currencySymbol}`) return false;
+      if (priceFilter === 'high' && restaurant.priceRange !== `${currencySymbol}${currencySymbol}${currencySymbol}`) return false;
     }
     
     if (ratingFilter > 0 && restaurant.rating < ratingFilter) {
@@ -202,6 +182,47 @@ const RestaurantsPage = () => {
         return 0;
     }
   });
+
+  // Loading state
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <div className="bg-white min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <Loader className="w-12 h-12 text-red-500 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">Loading restaurants...</p>
+          </div>
+        </div>
+        <Footer />
+      </>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <>
+        <Navbar />
+        <div className="bg-white min-h-screen flex items-center justify-center">
+          <div className="text-center max-w-md mx-auto px-4">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <X className="w-10 h-10 text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Failed to load restaurants</h3>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <button
+              onClick={fetchRestaurants}
+              className="px-6 py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white font-semibold rounded-xl hover:from-red-600 hover:to-orange-600 transition-all"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+        <Footer />
+      </>
+    );
+  }
 
   return (
     <>
@@ -250,7 +271,7 @@ const RestaurantsPage = () => {
                     <Shield className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
                   </div>
                   <div>
-                    <div className="font-bold text-xl md:text-2xl text-white">500+</div>
+                    <div className="font-bold text-xl md:text-2xl text-white">{restaurants.length}+</div>
                     <div className="text-xs md:text-sm text-white/80">Restaurants</div>
                   </div>
                 </div>
@@ -269,7 +290,7 @@ const RestaurantsPage = () => {
           </div>
         </div>
 
-        {/* Special Offers Bar - LIGHT VERSION - NO BLACK */}
+        {/* Special Offers Bar */}
         <div className="bg-white border-b border-gray-200">
           <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
             <div className="flex flex-nowrap md:flex-wrap gap-3 justify-start md:justify-center overflow-x-auto no-scrollbar">
@@ -289,10 +310,10 @@ const RestaurantsPage = () => {
         </div>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 bg-white">
-          {/* Search and Filter Bar - Mobile Optimized */}
+          {/* Search and Filter Bar */}
           <div className="mb-8 md:mb-12 bg-white rounded-xl md:rounded-2xl shadow-lg md:shadow-xl p-4 md:p-6 border border-gray-100">
             <div className="flex flex-col lg:flex-row gap-4 md:gap-6 justify-between items-start lg:items-center">
-              {/* Categories - Horizontal Scroll on Mobile */}
+              {/* Categories */}
               <div className="w-full overflow-x-auto pb-2 no-scrollbar">
                 <div className="flex gap-2 md:gap-3">
                   {categories.map((category) => {
@@ -332,9 +353,9 @@ const RestaurantsPage = () => {
                 </div>
               </div>
 
-              {/* Sort and Filter - Stack on Mobile */}
+              {/* Sort and Filter */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-                {/* Search - Full width on mobile */}
+                {/* Search */}
                 <div className="relative flex-1 lg:flex-none lg:w-80">
                   <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-orange-500 rounded-xl blur-sm opacity-20"></div>
                   <div className="relative">
@@ -400,7 +421,7 @@ const RestaurantsPage = () => {
               </div>
             </div>
 
-            {/* Filter Panel (Mobile) - Full Screen Modal */}
+            {/* Filter Panel (Mobile) */}
             {showFilters && (
               <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setShowFilters(false)}>
                 <div className="absolute inset-0 bg-black/50" />
@@ -422,7 +443,7 @@ const RestaurantsPage = () => {
                     {/* Price Range */}
                     <div>
                       <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                        <DollarSign className="w-5 h-5 text-green-500" />
+                        <IndianRupee className="w-5 h-5 text-green-500" />
                         Price Range
                       </h4>
                       <div className="grid grid-cols-2 gap-3">
@@ -515,14 +536,14 @@ const RestaurantsPage = () => {
 
           {/* Main Content */}
           <div className="flex flex-col lg:flex-row gap-6 md:gap-8">
-            {/* Sidebar Filters (Desktop) - Hidden on mobile */}
+            {/* Sidebar Filters (Desktop) */}
             <aside className="hidden lg:block w-72 flex-shrink-0">
               <div className="sticky top-28 space-y-6">
                 {/* Price Filter Card */}
                 <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-lg">
                   <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center">
-                      <DollarSign className="w-5 h-5 text-white" />
+                      <IndianRupee className="w-5 h-5 text-white" />
                     </div>
                     <h3 className="font-bold text-lg text-gray-900">Price Range</h3>
                   </div>
@@ -646,7 +667,7 @@ const RestaurantsPage = () => {
 
             {/* Restaurant Grid */}
             <div className="flex-1">
-              {/* Results Header - Mobile Optimized */}
+              {/* Results Header */}
               <div className="mb-6 md:mb-8 bg-white rounded-xl md:rounded-2xl p-4 md:p-6 border border-gray-200 shadow-sm">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div>
@@ -676,7 +697,7 @@ const RestaurantsPage = () => {
                 </div>
               </div>
 
-              {/* Restaurant Grid - Responsive Cards */}
+              {/* Restaurant Grid - Cards */}
               {sortedRestaurants.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
                   {sortedRestaurants.map((restaurant) => (
@@ -693,6 +714,13 @@ const RestaurantsPage = () => {
                           <div className="absolute top-3 left-3 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] md:text-xs font-bold px-2.5 md:px-4 py-1 md:py-2 rounded-full shadow-lg flex items-center gap-1">
                             <Award className="w-2.5 h-2.5 md:w-3 md:h-3" />
                             <span>Featured</span>
+                          </div>
+                        )}
+                        
+                        {/* Open/Closed Badge */}
+                        {!restaurant.isOpen && (
+                          <div className="absolute top-3 left-3 bg-gray-800/90 text-white text-[10px] md:text-xs font-bold px-2.5 md:px-4 py-1 md:py-2 rounded-full shadow-lg">
+                            Closed
                           </div>
                         )}
                         
@@ -777,7 +805,7 @@ const RestaurantsPage = () => {
                           <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-2 md:p-3 rounded-lg">
                             <div className="flex items-center gap-2">
                               <div className="w-8 h-8 md:w-9 md:h-9 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                <IndianRupee className="w-4 h-4 md:w-5 md:h-5 text-white" />
                               </div>
                               <div>
                                 <div className="text-[10px] md:text-xs text-gray-500">Fee</div>
@@ -787,10 +815,16 @@ const RestaurantsPage = () => {
                           </div>
                         </div>
 
-                        {/* Action Button */}
-                        <button className="group/btn w-full py-2.5 md:py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-sm md:text-base rounded-lg md:rounded-xl hover:from-red-600 hover:to-orange-600 transition-all duration-300 hover:shadow-md flex items-center justify-center gap-2">
-                          <span>View Menu</span>
-                          <ArrowRight className="w-3 h-3 md:w-4 md:h-4 group-hover/btn:translate-x-1 transition-transform" />
+                        {/* Action Button - FIXED NAVIGATION */}
+                        <button 
+                          onClick={() => viewMenu(restaurant.id)}
+                          disabled={!restaurant.isOpen}
+                          className={`group/btn w-full py-2.5 md:py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-sm md:text-base rounded-lg md:rounded-xl transition-all duration-300 hover:shadow-md flex items-center justify-center gap-2 ${
+                            !restaurant.isOpen ? 'opacity-50 cursor-not-allowed' : 'hover:from-red-600 hover:to-orange-600'
+                          }`}
+                        >
+                          <span>{restaurant.isOpen ? 'View Menu' : 'Closed'}</span>
+                          {restaurant.isOpen && <ArrowRight className="w-3 h-3 md:w-4 md:h-4 group-hover/btn:translate-x-1 transition-transform" />}
                         </button>
                       </div>
                     </div>
@@ -834,7 +868,7 @@ const RestaurantsPage = () => {
             </div>
           </div>
 
-          {/* Promotion Banner - Mobile Optimized */}
+          {/* Promotion Banner */}
           <div className="mt-12 md:mt-16 relative overflow-hidden rounded-2xl md:rounded-3xl bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 p-6 md:p-10 text-white">
             <div className="absolute inset-0 overflow-hidden">
               <div className="absolute -top-20 -right-20 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
@@ -864,7 +898,7 @@ const RestaurantsPage = () => {
                   <div className="w-12 h-12 md:w-14 md:h-14 lg:w-16 lg:h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-2">
                     <Users className="w-6 h-6 md:w-7 md:h-7 lg:w-8 lg:h-8 text-white" />
                   </div>
-                  <div className="text-xl md:text-2xl lg:text-3xl xl:text-4xl font-black">500+</div>
+                  <div className="text-xl md:text-2xl lg:text-3xl xl:text-4xl font-black">{restaurants.length}+</div>
                   <div className="text-[10px] md:text-xs lg:text-sm text-white/80">Restaurants</div>
                 </div>
                 <div className="text-center">

@@ -25,6 +25,7 @@ import {
   Salad,
   Cake,
   Coffee,
+  Navigation,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -37,14 +38,186 @@ const Navbar = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [showLocationMenu, setShowLocationMenu] = useState(false);
-  const [cartItemsCount] = useState(3);
-  const [userLocation, setUserLocation] = useState("New York, NY");
+  const [cartItemsCount, setCartItemsCount] = useState(0);
+  const [userLocation, setUserLocation] = useState("Detecting location...");
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [locationError, setLocationError] = useState(null);
 
   const searchRef = useRef(null);
   const menuRef = useRef(null);
   const locationRef = useRef(null);
   const mobileSearchRef = useRef(null);
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+  // Get current location
+  const getCurrentLocation = () => {
+    setIsGettingLocation(true);
+    setLocationError(null);
+
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported by your browser");
+      setIsGettingLocation(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          
+          // Using OpenStreetMap Nominatim API for reverse geocoding
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            const address = data.address;
+            
+            // Format the address based on available components
+            let locationString = "";
+            
+            if (address.city) {
+              locationString = address.city;
+            } else if (address.town) {
+              locationString = address.town;
+            } else if (address.village) {
+              locationString = address.village;
+            } else if (address.suburb) {
+              locationString = address.suburb;
+            }
+            
+            // Add state/region if available
+            if (address.state && locationString) {
+              locationString += `, ${address.state}`;
+            } else if (address.state) {
+              locationString = address.state;
+            }
+            
+            if (locationString) {
+              setUserLocation(locationString);
+              localStorage.setItem("userLocation", locationString);
+              localStorage.setItem("userLatitude", latitude.toString());
+              localStorage.setItem("userLongitude", longitude.toString());
+            } else {
+              // Fallback to coordinates if address not found
+              const coordLocation = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+              setUserLocation(coordLocation);
+              localStorage.setItem("userLocation", coordLocation);
+              localStorage.setItem("userLatitude", latitude.toString());
+              localStorage.setItem("userLongitude", longitude.toString());
+            }
+          } else {
+            // Fallback to coordinates
+            const coordLocation = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+            setUserLocation(coordLocation);
+            localStorage.setItem("userLocation", coordLocation);
+            localStorage.setItem("userLatitude", latitude.toString());
+            localStorage.setItem("userLongitude", longitude.toString());
+          }
+        } catch (error) {
+          console.error("Error getting location details:", error);
+          setLocationError("Failed to get location details");
+          
+          // Fallback to coordinates
+          const { latitude, longitude } = position.coords;
+          const coordLocation = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          setUserLocation(coordLocation);
+          localStorage.setItem("userLocation", coordLocation);
+          localStorage.setItem("userLatitude", latitude.toString());
+          localStorage.setItem("userLongitude", longitude.toString());
+        } finally {
+          setIsGettingLocation(false);
+          setShowLocationMenu(false);
+        }
+      },
+      (error) => {
+        setIsGettingLocation(false);
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            setLocationError("Please allow location access to use this feature");
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setLocationError("Location information is unavailable");
+            break;
+          case error.TIMEOUT:
+            setLocationError("Location request timed out");
+            break;
+          default:
+            setLocationError("An unknown error occurred");
+        }
+        console.error("Geolocation error:", error);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  };
+
+  // Get cart ID from localStorage
+  const getCartId = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('cartId');
+    }
+    return null;
+  };
+
+  // Fetch cart count
+  const fetchCartCount = async () => {
+    try {
+      const cartId = getCartId();
+      if (!cartId) {
+        setCartItemsCount(0);
+        return;
+      }
+
+      const response = await fetch(`${apiUrl}/Cart/${cartId}`);
+      if (response.ok) {
+        const cartItems = await response.json();
+        const totalCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+        setCartItemsCount(totalCount);
+      } else {
+        setCartItemsCount(0);
+      }
+    } catch (err) {
+      console.error('Error fetching cart:', err);
+      setCartItemsCount(0);
+    }
+  };
+
+  // Load user location from localStorage on mount
+  useEffect(() => {
+    const savedLocation = localStorage.getItem("userLocation");
+    const savedLat = localStorage.getItem("userLatitude");
+    const savedLng = localStorage.getItem("userLongitude");
+    
+    if (savedLocation) {
+      setUserLocation(savedLocation);
+    } else {
+      // Try to get current location if no saved location
+      getCurrentLocation();
+    }
+  }, []);
+
+  // Fetch cart count on mount and when cart changes
+  useEffect(() => {
+    fetchCartCount();
+
+    // Listen for cart updates (custom event)
+    const handleCartUpdate = () => {
+      fetchCartCount();
+    };
+
+    window.addEventListener('cartUpdated', handleCartUpdate);
+    
+    return () => {
+      window.removeEventListener('cartUpdated', handleCartUpdate);
+    };
+  }, []);
 
   // SCROLL SHADOW
   useEffect(() => {
@@ -121,6 +294,10 @@ const Navbar = () => {
     setUserLocation(location.name);
     setShowLocationMenu(false);
     localStorage.setItem("userLocation", location.name);
+    // Clear coordinates when manually selecting a location
+    localStorage.removeItem("userLatitude");
+    localStorage.removeItem("userLongitude");
+    setLocationError(null);
   };
 
   // NAV DATA with Lucide icons
@@ -334,12 +511,13 @@ const Navbar = () => {
                 <button
                   onClick={() => setShowLocationMenu(!showLocationMenu)}
                   className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-900"
+                  disabled={isGettingLocation}
                 >
                   <MapPin className="w-5 h-5 text-red-500" />
                   <div className="text-left">
                     <div className="text-sm font-semibold">Location</div>
                     <div className="text-xs text-gray-600 truncate max-w-[120px]">
-                      {userLocation}
+                      {isGettingLocation ? "Getting location..." : userLocation}
                     </div>
                   </div>
                   <ChevronDown className="w-4 h-4 text-gray-600" />
@@ -347,17 +525,39 @@ const Navbar = () => {
 
                 {/* Location Dropdown */}
                 {showLocationMenu && (
-                  <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50 overflow-hidden">
-                    <div className="p-3">
-                      <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                  <div className="absolute top-full mt-2 right-0 w-72 bg-white rounded-xl shadow-lg border border-gray-200 z-50 overflow-hidden">
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3">
                         Select Location
                       </h3>
+                      
+                      {/* Current Location Button */}
+                      <button
+                        onClick={getCurrentLocation}
+                        disabled={isGettingLocation}
+                        className="w-full text-left px-3 py-3 rounded-lg mb-3 bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-3"
+                      >
+                        <Navigation className="w-4 h-4 text-red-600" />
+                        <div>
+                          <span className="font-medium text-red-600">
+                            {isGettingLocation ? "Getting location..." : "Use Current Location"}
+                          </span>
+                          {locationError && (
+                            <p className="text-xs text-red-500 mt-1">{locationError}</p>
+                          )}
+                        </div>
+                      </button>
+
+                      {/* Popular Locations */}
+                      <h4 className="text-xs font-medium text-gray-500 mb-2 px-3">
+                        Popular Locations
+                      </h4>
                       {locations.map((location) => (
                         <button
                           key={location.id}
                           onClick={() => handleLocationSelect(location)}
                           className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 last:mb-0 transition-colors ${
-                            userLocation === location.name
+                            userLocation === location.name && !localStorage.getItem("userLatitude")
                               ? "bg-red-50 text-red-600 font-medium"
                               : "hover:bg-gray-100 text-gray-900"
                           }`}
@@ -381,16 +581,28 @@ const Navbar = () => {
 
               {/* Cart */}
               <button
-                onClick={() => navigateTo("/cart")}
-                className="relative p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-900"
+                onClick={() => navigateTo('/Cart')}
+                className="relative p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-900 group"
                 aria-label="Cart"
               >
-                <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6" />
-                {cartItemsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center">
-                    {cartItemsCount}
-                  </span>
-                )}
+                <div className="relative">
+                  <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6 group-hover:scale-110 transition-transform duration-200" />
+                  {cartItemsCount > 0 && (
+                    <>
+                      <span className="absolute -top-2 -right-2 flex h-5 w-5 sm:h-5 sm:w-5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-5 w-5 sm:h-5 sm:w-5 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold items-center justify-center shadow-lg">
+                          {cartItemsCount > 9 ? '9+' : cartItemsCount}
+                        </span>
+                      </span>
+                    </>
+                  )}
+                </div>
+                
+                {/* Tooltip on hover */}
+                <span className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none">
+                  {cartItemsCount > 0 ? `${cartItemsCount} item${cartItemsCount > 1 ? 's' : ''} in cart` : 'Cart is empty'}
+                </span>
               </button>
 
               {/* Profile */}
@@ -539,10 +751,10 @@ const Navbar = () => {
         </div>
       </nav>
 
-      {/* MOBILE SIDEBAR MENU - FIXED: No harsh black background */}
+      {/* MOBILE SIDEBAR MENU */}
       {isMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-50" ref={menuRef}>
-          {/* Backdrop - Modern frosted glass effect instead of harsh black */}
+          {/* Backdrop - Modern frosted glass effect */}
           <div
             className="absolute inset-0 bg-gray-900/20 backdrop-blur-md animate-fadeIn"
             onClick={() => setIsMenuOpen(false)}
@@ -621,6 +833,31 @@ const Navbar = () => {
                   <h3 className="text-sm font-semibold text-gray-900 mb-3 px-3">
                     Your Location
                   </h3>
+                  
+                  {/* Current Location Button */}
+                  <button
+                    onClick={() => {
+                      getCurrentLocation();
+                      setIsMenuOpen(false);
+                    }}
+                    disabled={isGettingLocation}
+                    className="w-full text-left px-3 py-3 rounded-lg mb-3 bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-3"
+                  >
+                    <Navigation className="w-4 h-4 text-red-600" />
+                    <div>
+                      <span className="font-medium text-red-600">
+                        {isGettingLocation ? "Getting location..." : "Use Current Location"}
+                      </span>
+                      {locationError && (
+                        <p className="text-xs text-red-500 mt-1">{locationError}</p>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* Popular Locations */}
+                  <h4 className="text-xs font-medium text-gray-500 mb-2 px-3">
+                    Popular Locations
+                  </h4>
                   <div className="space-y-1">
                     {locations.map((location) => (
                       <button
@@ -630,7 +867,7 @@ const Navbar = () => {
                           setIsMenuOpen(false);
                         }}
                         className={`w-full text-left px-3 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                          userLocation === location.name
+                          userLocation === location.name && !localStorage.getItem("userLatitude")
                             ? "bg-red-50 text-red-600 font-medium"
                             : "hover:bg-gray-100 text-gray-900"
                         }`}
