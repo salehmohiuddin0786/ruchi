@@ -37,7 +37,7 @@ export default function RegisterPage() {
       email: data.email,
       phone: data.phone,
       password: data.password,
-      role: 'user'
+      role: 'customer' // ✅ Changed from 'user' to 'customer' to match backend
     };
     
     const result = await registerUser(userData);
@@ -78,7 +78,7 @@ export default function RegisterPage() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
               Create Account
             </h1>
-            <p className="text-gray-500">Join us today! It's free and easy.</p>
+            <p className="text-gray-500">Join us as a customer! It's free and easy.</p>
           </div>
 
           {/* Error Alert */}
@@ -349,7 +349,7 @@ export default function RegisterPage() {
               ) : (
                 <>
                   <UserPlus className="h-5 w-5" />
-                  <span>Create Account</span>
+                  <span>Create Customer Account</span>
                 </>
               )}
             </button>

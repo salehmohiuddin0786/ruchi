@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useAuth } from '../context/page.jsx';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const { register, handleSubmit, formState: { errors } } = useForm();
@@ -22,9 +22,33 @@ export default function LoginPage() {
     const result = await login(data.email, data.password);
     
     if (result.success) {
-      router.push('/');
+      // Check user role to ensure it's customer
+      if (result.user && result.user.role === 'customer') {
+        router.push('/');
+      } else if (result.user && result.user.role === 'partner') {
+        // If somehow a partner tries to login here, show appropriate message
+        setError('Please use the partner login portal');
+        // Optional: redirect to partner login after 2 seconds
+        setTimeout(() => {
+          router.push('/partner/login');
+        }, 2000);
+      } else if (result.user && result.user.role === 'admin') {
+        setError('Please use the admin login portal');
+        setTimeout(() => {
+          router.push('/admin/login');
+        }, 2000);
+      } else {
+        router.push('/');
+      }
     } else {
-      setError(result.error);
+      // Handle specific error messages from backend
+      if (result.error?.toLowerCase().includes('use appropriate login portal')) {
+        setError('This account is for partners/admins. Please use the correct login portal.');
+      } else if (result.error?.toLowerCase().includes('invalid credentials')) {
+        setError('Invalid email or password. Please try again.');
+      } else {
+        setError(result.error || 'Login failed. Please try again.');
+      }
     }
     
     setLoading(false);
@@ -43,20 +67,40 @@ export default function LoginPage() {
             <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
               Welcome Back
             </h1>
-            <p className="text-sm sm:text-base text-gray-500">Sign in to your account</p>
+            <p className="text-sm sm:text-base text-gray-500">Customer Login</p>
+            <p className="text-xs text-gray-400">Sign in to access your account</p>
           </div>
 
           {/* Error Alert */}
           {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-3 sm:p-4 rounded">
+            <div className={`border-l-4 p-3 sm:p-4 rounded ${
+              error.includes('partner') || error.includes('admin') 
+                ? 'bg-yellow-50 border-yellow-500' 
+                : 'bg-red-50 border-red-500'
+            }`}>
               <div className="flex">
                 <div className="flex-shrink-0">
-                  <svg className="h-4 w-4 sm:h-5 sm:w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
+                  {error.includes('partner') || error.includes('admin') ? (
+                    <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-400" />
+                  ) : (
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  )}
                 </div>
                 <div className="ml-3">
-                  <p className="text-xs sm:text-sm text-red-600">{error}</p>
+                  <p className={`text-xs sm:text-sm ${
+                    error.includes('partner') || error.includes('admin') 
+                      ? 'text-yellow-700' 
+                      : 'text-red-600'
+                  }`}>
+                    {error}
+                  </p>
+                  {(error.includes('partner') || error.includes('admin')) && (
+                    <p className="text-xs text-yellow-600 mt-1">
+                      Redirecting to appropriate login page...
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -76,6 +120,7 @@ export default function LoginPage() {
                 <input
                   id="email"
                   type="email"
+                  autoComplete="email"
                   {...register('email', { 
                     required: 'Email is required',
                     pattern: {
@@ -86,7 +131,7 @@ export default function LoginPage() {
                   className={`block w-full pl-9 sm:pl-10 pr-3 py-2 sm:py-2.5 text-sm sm:text-base border ${
                     errors.email ? 'border-red-500' : 'border-gray-300'
                   } rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition duration-200 text-black placeholder-gray-400`}
-                  placeholder="you@example.com"
+                  placeholder="customer@example.com"
                 />
               </div>
               {errors.email && (
@@ -106,6 +151,7 @@ export default function LoginPage() {
                 <input
                   id="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   {...register('password', { 
                     required: 'Password is required',
                     minLength: {
@@ -167,7 +213,7 @@ export default function LoginPage() {
               ) : (
                 <>
                   <LogIn className="h-4 w-4 sm:h-5 sm:w-5" />
-                  <span>Sign In</span>
+                  <span>Sign In as Customer</span>
                 </>
               )}
             </button>
@@ -176,12 +222,25 @@ export default function LoginPage() {
           {/* Sign Up Link */}
           <div className="text-center pt-3 sm:pt-4 border-t border-gray-200">
             <p className="text-xs sm:text-sm text-gray-600">
-              Don't have an account?{' '}
+              Don't have a customer account?{' '}
               <Link 
                 href="/signup" 
                 className="text-purple-600 hover:text-purple-500 font-semibold hover:underline transition duration-200"
               >
-                Sign up
+                Create one now
+              </Link>
+            </p>
+          </div>
+
+          {/* Partner Login Link */}
+          <div className="text-center">
+            <p className="text-xs text-gray-500">
+              Are you a restaurant partner?{' '}
+              <Link 
+                href="/partner/login" 
+                className="text-purple-600 hover:text-purple-500 hover:underline transition duration-200"
+              >
+                Partner Login
               </Link>
             </p>
           </div>
