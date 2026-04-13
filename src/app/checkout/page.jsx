@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
-import Image from 'next/image';
 import { 
   FiShoppingCart, 
   FiMapPin, 
@@ -17,9 +16,15 @@ import {
   FiUser,
   FiArrowLeft,
   FiArrowRight,
-  FiAlertCircle
+  FiAlertCircle,
+  FiTag,
+  FiDollarSign,
+  FiClock,
+  FiShield,
+  FiStar,
+  FiGift
 } from 'react-icons/fi';
-import { FaMoneyBillWave } from 'react-icons/fa';
+import { FaMoneyBillWave, FaRupeeSign } from 'react-icons/fa';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
@@ -48,11 +53,19 @@ const CheckoutPage = () => {
   // Cart state from API
   const [cartItems, setCartItems] = useState([]);
 
-  // Delivery state
+  // Promo code state
+  const [appliedPromo, setAppliedPromo] = useState(null);
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [promoError, setPromoError] = useState('');
+  const [promoSuccess, setPromoSuccess] = useState(false);
+  const [showPromoInput, setShowPromoInput] = useState(false);
+  const [availableOffers, setAvailableOffers] = useState([]);
+  const [showOffers, setShowOffers] = useState(false);
+
+  // Delivery state (matches controller fields)
   const [deliveryDetails, setDeliveryDetails] = useState({
-    address: '',
-    apartment: '',
-    instructions: '',
+    deliveryAddress: '',
     contactNumber: '',
     contactName: ''
   });
@@ -71,6 +84,7 @@ const CheckoutPage = () => {
   const [validationErrors, setValidationErrors] = useState({});
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+  const currencySymbol = '₹';
 
   // Get auth token from localStorage
   const getAuthToken = () => {
@@ -118,19 +132,63 @@ const CheckoutPage = () => {
     return null;
   };
 
+  // Load promo code from session storage
+  const loadPromoCode = () => {
+    if (typeof window !== 'undefined') {
+      const savedPromo = sessionStorage.getItem('appliedPromo');
+      const savedDiscount = sessionStorage.getItem('promoDiscount');
+      
+      if (savedPromo && savedDiscount) {
+        try {
+          setAppliedPromo(JSON.parse(savedPromo));
+          setPromoDiscount(parseFloat(savedDiscount));
+        } catch (e) {
+          console.error('Error loading promo code:', e);
+        }
+      }
+    }
+  };
+
+  // Save promo code to session storage
+  const savePromoCode = (promo, discount) => {
+    if (typeof window !== 'undefined') {
+      if (promo && discount) {
+        sessionStorage.setItem('appliedPromo', JSON.stringify(promo));
+        sessionStorage.setItem('promoDiscount', discount.toString());
+      } else {
+        sessionStorage.removeItem('appliedPromo');
+        sessionStorage.removeItem('promoDiscount');
+      }
+    }
+  };
+
+  // Fetch available offers
+  const fetchAvailableOffers = async () => {
+    try {
+      const response = await fetch(`${apiUrl}/offers`);
+      if (response.ok) {
+        const result = await response.json();
+        setAvailableOffers(result.data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching offers:', err);
+    }
+  };
+
   useEffect(() => {
-    // Get auth token on component mount
     const token = getAuthToken();
     setAuthToken(token);
     
-    // If user is logged in, pre-fill contact details
+    loadPromoCode();
+    fetchAvailableOffers();
+    
     const user = getUserData();
     if (user) {
       setDeliveryDetails(prev => ({
         ...prev,
         contactName: user.name || '',
         contactNumber: user.phone || '',
-        address: user.address || ''
+        deliveryAddress: user.address || ''
       }));
     }
     
@@ -151,7 +209,7 @@ const CheckoutPage = () => {
       if (!response.ok) throw new Error('Failed to fetch cart');
       
       const data = await response.json();
-      setCartItems(data);
+      setCartItems(data.items || data || []);
     } catch (err) {
       console.error('Error fetching cart:', err);
       setError('Failed to load cart items');
@@ -175,10 +233,14 @@ const CheckoutPage = () => {
 
       if (!response.ok) throw new Error('Failed to update quantity');
       
-      // Refresh cart
       await fetchCart();
       
-      // Trigger cart update event for navbar
+      if (appliedPromo) {
+        setAppliedPromo(null);
+        setPromoDiscount(0);
+        savePromoCode(null, null);
+      }
+      
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('cartUpdated'));
       }
@@ -197,10 +259,14 @@ const CheckoutPage = () => {
 
       if (!response.ok) throw new Error('Failed to remove item');
       
-      // Refresh cart
       await fetchCart();
       
-      // Trigger cart update event for navbar
+      if (appliedPromo) {
+        setAppliedPromo(null);
+        setPromoDiscount(0);
+        savePromoCode(null, null);
+      }
+      
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('cartUpdated'));
       }
@@ -210,23 +276,98 @@ const CheckoutPage = () => {
     }
   };
 
+  // Validate promo code
+  const validatePromoCode = (code) => {
+    const subtotal = calculateSubtotal();
+    const offer = availableOffers.find(o => o.couponCode?.toUpperCase() === code.toUpperCase());
+    
+    if (!offer) {
+      return { valid: false, message: 'Invalid promo code' };
+    }
+    
+    if (!offer.isActive) {
+      return { valid: false, message: 'This promo code has expired' };
+    }
+    
+    const now = new Date();
+    if (offer.validFrom && now < new Date(offer.validFrom)) {
+      return { valid: false, message: 'This offer has not started yet' };
+    }
+    if (offer.validTo && now > new Date(offer.validTo)) {
+      return { valid: false, message: 'This offer has expired' };
+    }
+    
+    if (offer.minOrderAmount && subtotal < Number(offer.minOrderAmount)) {
+      return { 
+        valid: false, 
+        message: `Minimum order amount of ${formatINR(offer.minOrderAmount)} required` 
+      };
+    }
+    
+    let discount = (subtotal * Number(offer.discountPercent)) / 100;
+    if (offer.maxDiscount && discount > Number(offer.maxDiscount)) {
+      discount = Number(offer.maxDiscount);
+    }
+    
+    return { 
+      valid: true, 
+      discount, 
+      offer,
+      message: `Promo code applied! ${offer.discountPercent}% OFF` 
+    };
+  };
+
+  // Apply promo code
+  const applyPromoCode = () => {
+    setPromoError('');
+    
+    if (!promoCodeInput.trim()) {
+      setPromoError('Please enter a promo code');
+      return;
+    }
+    
+    const validation = validatePromoCode(promoCodeInput);
+    
+    if (validation.valid) {
+      setPromoDiscount(validation.discount);
+      setAppliedPromo(validation.offer);
+      setPromoSuccess(true);
+      setPromoError('');
+      setShowPromoInput(false);
+      setPromoCodeInput('');
+      
+      savePromoCode(validation.offer, validation.discount);
+      
+      setTimeout(() => setPromoSuccess(false), 3000);
+    } else {
+      setPromoError(validation.message);
+    }
+  };
+
+  // Remove promo code
+  const removePromoCode = () => {
+    setAppliedPromo(null);
+    setPromoDiscount(0);
+    savePromoCode(null, null);
+  };
+
   // Calculate totals
   const calculateSubtotal = () => {
-    return cartItems.reduce((total, item) => total + (item.Dish?.price || 0) * item.quantity, 0);
+    return cartItems.reduce((total, item) => total + (item.Dish?.price || item.price || 0) * item.quantity, 0);
   };
 
   const calculateTax = (subtotal) => {
-    return subtotal * 0.05; // 5% tax
+    return subtotal * 0.05;
   };
 
   const calculateDeliveryFee = (subtotal) => {
-    return subtotal > 500 ? 0 : 40; // Free delivery over ₹500
+    return subtotal > 500 ? 0 : 40;
   };
 
   const subtotal = calculateSubtotal();
   const deliveryFee = calculateDeliveryFee(subtotal);
-  const tax = calculateTax(subtotal);
-  const total = subtotal + deliveryFee + tax;
+  const tax = calculateTax(subtotal - promoDiscount);
+  const total = subtotal + deliveryFee + tax - promoDiscount;
 
   // Handle delivery details change
   const handleDeliveryChange = (e) => {
@@ -234,7 +375,6 @@ const CheckoutPage = () => {
       ...deliveryDetails,
       [e.target.name]: e.target.value
     });
-    // Clear validation error for this field
     if (validationErrors[e.target.name]) {
       setValidationErrors({
         ...validationErrors,
@@ -254,11 +394,10 @@ const CheckoutPage = () => {
   // Validate delivery details
   const validateDeliveryDetails = () => {
     const errors = {};
-    if (!deliveryDetails.address) errors.address = 'Address is required';
+    if (!deliveryDetails.deliveryAddress) errors.deliveryAddress = 'Delivery address is required';
     if (!deliveryDetails.contactNumber) errors.contactNumber = 'Contact number is required';
     if (!deliveryDetails.contactName) errors.contactName = 'Contact name is required';
     
-    // Phone number validation (Indian format)
     if (deliveryDetails.contactNumber && !/^[6-9]\d{9}$/.test(deliveryDetails.contactNumber)) {
       errors.contactNumber = 'Please enter a valid 10-digit Indian mobile number';
     }
@@ -276,7 +415,6 @@ const CheckoutPage = () => {
       if (!paymentDetails.expiry) errors.expiry = 'Expiry date is required';
       if (!paymentDetails.cvv) errors.cvv = 'CVV is required';
       
-      // Basic card validation
       if (paymentDetails.cardNumber && !/^\d{16}$/.test(paymentDetails.cardNumber.replace(/\s/g, ''))) {
         errors.cardNumber = 'Please enter a valid 16-digit card number';
       }
@@ -296,7 +434,6 @@ const CheckoutPage = () => {
         setValidationErrors({ upiId: 'UPI ID is required' });
         return false;
       }
-      // Basic UPI validation
       if (!/^[\w\.\-]+@[\w\.\-]+$/.test(paymentDetails.upiId)) {
         setValidationErrors({ upiId: 'Please enter a valid UPI ID' });
         return false;
@@ -317,7 +454,7 @@ const CheckoutPage = () => {
       }
     } else if (activeStep === 1) {
       if (!validateDeliveryDetails()) {
-        setError('Please fill in all required delivery details correctly');
+        setError('Please fill in all required delivery details');
         return;
       }
     } else if (activeStep === 2) {
@@ -340,7 +477,7 @@ const CheckoutPage = () => {
     setError('');
   };
 
-  // Place order
+  // Place order - matches controller fields exactly
   const handlePlaceOrder = async () => {
     setLoading(true);
     setError('');
@@ -351,42 +488,31 @@ const CheckoutPage = () => {
         throw new Error('Cart not found');
       }
 
-      // Get restaurant ID from first item
-      const restaurantId = cartItems[0]?.Dish?.restaurantId;
+      const restaurantId = cartItems[0]?.Dish?.restaurantId || cartItems[0]?.restaurantId;
       if (!restaurantId) {
         throw new Error('Restaurant information missing');
       }
 
-      // Get user ID if logged in
       const userId = getUserId();
       const token = getAuthToken();
 
-      // Format items for order
-      const orderItems = cartItems.map(item => ({
+      // Format items exactly as controller expects
+      const items = cartItems.map(item => ({
         dishId: item.dishId,
         quantity: item.quantity,
-        price: item.Dish?.price || 0,
-        name: item.Dish?.name || 'Unknown Dish'
+        price: item.Dish?.price || item.price || 0
       }));
 
-      // Prepare order data in the format your backend expects
+      // Prepare order data matching controller fields
       const orderData = {
-        items: orderItems,
+        items: items,
         restaurantId: restaurantId,
-        totalAmount: total,
-        deliveryAddress: deliveryDetails.address,
-        deliveryApartment: deliveryDetails.apartment || '',
-        deliveryInstructions: deliveryDetails.instructions || '',
-        contactName: deliveryDetails.contactName,
-        contactNumber: deliveryDetails.contactNumber,
-        paymentMethod: paymentMethod.toUpperCase(),
-        cartId: cartId ? parseInt(cartId) : null,
-        userId: userId || null
+        deliveryAddress: deliveryDetails.deliveryAddress,
+        couponCode: appliedPromo?.couponCode || null
       };
 
       console.log('Sending order data:', orderData);
 
-      // Create order with authorization header
       const response = await fetch(`${apiUrl}/orders`, {
         method: 'POST',
         headers: {
@@ -396,7 +522,6 @@ const CheckoutPage = () => {
         body: JSON.stringify(orderData)
       });
 
-      // Get response text
       const responseText = await response.text();
       console.log('Raw response:', responseText);
 
@@ -411,7 +536,6 @@ const CheckoutPage = () => {
         throw new Error(errorMessage);
       }
 
-      // Parse successful response
       let order;
       try {
         order = JSON.parse(responseText);
@@ -420,18 +544,16 @@ const CheckoutPage = () => {
         throw new Error('Invalid response from server');
       }
       
-      setCreatedOrder(order);
+      setCreatedOrder(order.order || order);
       setOrderSuccess(true);
       
-      // Clear cart from localStorage
       localStorage.removeItem('cartId');
+      savePromoCode(null, null);
       
-      // Trigger cart update event for navbar
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('cartUpdated'));
       }
       
-      // Move to confirmation step
       setActiveStep(steps.length);
       
     } catch (err) {
@@ -446,10 +568,10 @@ const CheckoutPage = () => {
     return (
       <>
         <Navbar />
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
           <div className="text-center">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading checkout...</p>
+            <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 font-medium">Loading checkout...</p>
           </div>
         </div>
         <Footer />
@@ -459,125 +581,251 @@ const CheckoutPage = () => {
 
   // Cart Review Step
   const renderCartReview = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-2">
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <FiShoppingCart className="text-blue-600 text-xl" />
-            Review Your Items
-          </h3>
-          <hr className="border-gray-200 mb-4" />
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-orange-500 to-red-500 px-6 py-4">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <FiShoppingCart className="text-xl" />
+              Review Your Items
+            </h3>
+          </div>
           
           {cartItems.length === 0 ? (
-            <div className="text-center py-8">
+            <div className="text-center py-12 px-6">
+              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FiShoppingCart className="text-3xl text-gray-400" />
+              </div>
               <p className="text-gray-500">Your cart is empty</p>
               <button
                 onClick={() => router.push('/')}
-                className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
+                className="mt-4 px-6 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg font-medium hover:shadow-lg transition-all"
               >
                 Browse Restaurants
               </button>
             </div>
           ) : (
-            cartItems.map((item) => (
-              <div key={item.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 py-4 border-b border-gray-100 last:border-0">
-                <div className="w-20 h-20 flex-shrink-0 relative">
-                  {item.Dish?.image ? (
-                    <img
-                      src={`${apiUrl.replace('/api', '')}/uploads/${item.Dish.image}`}
-                      alt={item.Dish.name}
-                      className="w-full h-full object-cover rounded-lg"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center">
-                      <span className="text-gray-400 text-2xl">🍽️</span>
+            <div className="divide-y divide-gray-100">
+              {cartItems.map((item) => (
+                <div key={item.id} className="p-6 hover:bg-gray-50 transition-colors">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    <div className="w-20 h-20 flex-shrink-0 relative rounded-xl overflow-hidden shadow-md">
+                      {item.Dish?.image ? (
+                        <img
+                          src={`${apiUrl.replace('/api', '')}/uploads/${item.Dish.image}`}
+                          alt={item.Dish.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 rounded-xl flex items-center justify-center">
+                          <span className="text-2xl">🍽️</span>
+                        </div>
+                      )}
                     </div>
-                  )}
+                    <div className="flex-grow">
+                      <h4 className="font-semibold text-gray-800 text-lg">{item.Dish?.name || 'Unknown Dish'}</h4>
+                      <p className="text-sm text-gray-500 mt-1">{formatINR(item.Dish?.price || item.price || 0)} each</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors disabled:opacity-50"
+                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                        disabled={item.quantity <= 1}
+                      >
+                        <FiMinus className="text-gray-600" />
+                      </button>
+                      <span className="w-8 text-center font-semibold">{item.quantity}</span>
+                      <button 
+                        className="w-8 h-8 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center hover:shadow-md transition-all"
+                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      >
+                        <FiPlus className="text-white" />
+                      </button>
+                    </div>
+                    <div className="text-right min-w-[100px]">
+                      <span className="font-bold text-orange-600 text-lg">
+                        {formatINR((item.Dish?.price || item.price || 0) * item.quantity)}
+                      </span>
+                    </div>
+                    <button 
+                      className="text-red-400 hover:text-red-600 p-2 transition-colors"
+                      onClick={() => removeItem(item.id)}
+                    >
+                      <FiTrash2 />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex-grow">
-                  <h4 className="font-semibold text-gray-800">{item.Dish?.name || 'Unknown Dish'}</h4>
-                  <p className="text-sm text-gray-500">{item.Dish?.restaurant?.name || 'Restaurant'}</p>
-                  <p className="text-sm text-gray-500 mt-1">Price: {formatINR(item.Dish?.price || 0)} each</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                    disabled={item.quantity <= 1}
-                  >
-                    <FiMinus className="text-gray-600" />
-                  </button>
-                  <span className="w-8 text-center font-medium">{item.quantity}</span>
-                  <button 
-                    className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                  >
-                    <FiPlus className="text-gray-600" />
-                  </button>
-                </div>
-                <div className="text-right min-w-[100px]">
-                  <span className="font-semibold text-blue-600">
-                    {formatINR((item.Dish?.price || 0) * item.quantity)}
-                  </span>
-                </div>
-                <button 
-                  className="text-red-500 hover:text-red-600 p-2"
-                  onClick={() => removeItem(item.id)}
-                >
-                  <FiTrash2 />
-                </button>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       </div>
 
       <div className="lg:col-span-1">
-        <div className="bg-white rounded-xl shadow-sm p-6 sticky top-4">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Order Summary</h3>
-          <hr className="border-gray-200 mb-4" />
+        <div className="bg-white rounded-2xl shadow-lg sticky top-24 overflow-hidden">
+          <div className="bg-gradient-to-r from-gray-800 to-gray-900 px-6 py-4">
+            <h3 className="text-lg font-semibold text-white">Order Summary</h3>
+          </div>
           
-          <div className="space-y-3 mb-4">
-            <div className="flex justify-between text-gray-600">
-              <span>Subtotal</span>
-              <span>{formatINR(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-gray-600">
-              <span>Delivery Fee</span>
-              {deliveryFee === 0 ? (
-                <span className="text-green-600">FREE</span>
-              ) : (
-                <span>{formatINR(deliveryFee)}</span>
+          <div className="p-6">
+            <div className="space-y-3 mb-4">
+              <div className="flex justify-between text-gray-600">
+                <span>Subtotal</span>
+                <span className="font-medium">{formatINR(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span className="flex items-center gap-1">
+                  <FiTruck className="text-gray-400" />
+                  Delivery Fee
+                </span>
+                {deliveryFee === 0 ? (
+                  <span className="text-green-600 font-medium">FREE</span>
+                ) : (
+                  <span>{formatINR(deliveryFee)}</span>
+                )}
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>GST (5%)</span>
+                <span>{formatINR(tax)}</span>
+              </div>
+              
+              {appliedPromo && promoDiscount > 0 && (
+                <div className="flex justify-between text-green-600 pt-2 border-t border-gray-200">
+                  <span className="flex items-center gap-1">
+                    <FiTag className="text-green-500" />
+                    Discount ({appliedPromo.discountPercent}% OFF)
+                  </span>
+                  <span>-{formatINR(promoDiscount)}</span>
+                </div>
               )}
             </div>
-            <div className="flex justify-between text-gray-600">
-              <span>GST (5%)</span>
-              <span>{formatINR(tax)}</span>
+            
+            {subtotal < 500 && subtotal > 0 && (
+              <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-xl p-3 mb-4">
+                <p className="text-sm text-orange-700 flex items-center gap-2">
+                  <FiAlertCircle className="flex-shrink-0" />
+                  Add {formatINR(500 - subtotal)} more for FREE delivery
+                </p>
+              </div>
+            )}
+            
+            {/* Promo Code Section */}
+            {!appliedPromo ? (
+              <div className="mb-4">
+                {showPromoInput ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter promo code"
+                        value={promoCodeInput}
+                        onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      />
+                      <button
+                        onClick={applyPromoCode}
+                        className="px-4 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white text-sm rounded-lg hover:shadow-md transition-all"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                    {promoError && <p className="text-xs text-red-500">{promoError}</p>}
+                    <button
+                      onClick={() => setShowPromoInput(false)}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setShowPromoInput(true)}
+                      className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
+                    >
+                      <FiTag className="w-4 h-4" />
+                      Have a promo code?
+                    </button>
+                    
+                    {availableOffers.length > 0 && (
+                      <button
+                        onClick={() => setShowOffers(!showOffers)}
+                        className="flex items-center gap-2 text-sm text-purple-600 hover:text-purple-700 font-medium"
+                      >
+                        <FiGift className="w-4 h-4" />
+                        View Available Offers ({availableOffers.length})
+                      </button>
+                    )}
+                  </div>
+                )}
+                
+                {showOffers && !appliedPromo && (
+                  <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">Available Offers:</p>
+                    {availableOffers.filter(o => o.isActive).map((offer) => (
+                      <div key={offer.id} className="p-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl border border-gray-200">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold text-gray-800">{offer.title}</p>
+                            <p className="text-xs text-orange-600 font-medium">{offer.discountPercent}% OFF</p>
+                            <p className="text-xs text-gray-500">Min order: {formatINR(offer.minOrderAmount || 199)}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setPromoCodeInput(offer.couponCode);
+                              applyPromoCode();
+                            }}
+                            className="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs rounded-lg hover:shadow-md transition-all"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">Code: {offer.couponCode}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mb-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-green-700 flex items-center gap-1">
+                    <FiCheckCircle className="text-green-600" />
+                    {appliedPromo.title || 'Promo'} applied!
+                  </span>
+                  <p className="text-xs text-green-600">Code: {appliedPromo.couponCode}</p>
+                </div>
+                <button
+                  onClick={removePromoCode}
+                  className="text-green-700 hover:text-green-800"
+                >
+                  <FiTrash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            
+            <div className="border-t border-gray-200 pt-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-bold text-gray-800 text-lg">Total</span>
+                <div className="text-right">
+                  <span className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent">
+                    {formatINR(total)}
+                  </span>
+                  {appliedPromo && (
+                    <p className="text-xs text-green-600">You saved {formatINR(promoDiscount)}</p>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">Including all taxes</p>
             </div>
+
+            {cartItems[0]?.Dish?.restaurant && (
+              <div className="mt-4 p-3 bg-gray-50 rounded-xl flex items-center gap-2 text-gray-600">
+                <FiHome className="text-gray-400" />
+                <span className="text-sm">{cartItems[0].Dish.restaurant.name}</span>
+              </div>
+            )}
           </div>
-          
-          {subtotal < 500 && subtotal > 0 && (
-            <div className="bg-orange-50 rounded-lg p-3 mb-4">
-              <p className="text-sm text-orange-700 flex items-center gap-2">
-                <FiAlertCircle className="flex-shrink-0" />
-                Add {formatINR(500 - subtotal)} more for FREE delivery
-              </p>
-            </div>
-          )}
-          
-          <hr className="border-gray-200 mb-4" />
-          
-          <div className="flex justify-between items-center mb-6">
-            <span className="font-semibold text-gray-800">Total</span>
-            <span className="text-xl font-bold text-blue-600">{formatINR(total)}</span>
-          </div>
-          
-          {cartItems[0]?.Dish?.restaurant && (
-            <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-2 text-gray-600">
-              <FiHome className="text-gray-400" />
-              <span className="text-sm">{cartItems[0].Dish.restaurant.name}</span>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -586,101 +834,78 @@ const CheckoutPage = () => {
   // Delivery Details Step
   const renderDeliveryDetails = () => (
     <div className="max-w-2xl mx-auto">
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <FiMapPin className="text-blue-600 text-xl" />
-          Delivery Address
-        </h3>
-        <hr className="border-gray-200 mb-6" />
+      <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-orange-500 to-red-500 px-6 py-4">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <FiMapPin className="text-xl" />
+            Delivery Address
+          </h3>
+        </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
-              <FiHome className="text-gray-400" />
-              Street Address *
-            </label>
-            <input
-              type="text"
-              name="address"
-              className={`w-full px-4 py-3 rounded-lg border ${
-                validationErrors.address ? 'border-red-500' : 'border-gray-300'
-              } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-              value={deliveryDetails.address}
-              onChange={handleDeliveryChange}
-              placeholder="Enter your street address"
-            />
-            {validationErrors.address && (
-              <p className="mt-1 text-sm text-red-500">{validationErrors.address}</p>
-            )}
-          </div>
-          
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Apartment/Suite (Optional)
-            </label>
-            <input
-              type="text"
-              name="apartment"
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              value={deliveryDetails.apartment}
-              onChange={handleDeliveryChange}
-              placeholder="Apt, Suite, Building (optional)"
-            />
-          </div>
-          
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Delivery Instructions (Optional)
-            </label>
-            <textarea
-              name="instructions"
-              rows="3"
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-none"
-              value={deliveryDetails.instructions}
-              onChange={handleDeliveryChange}
-              placeholder="e.g., Leave at door, Gate code, etc."
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
-              <FiUser className="text-gray-400" />
-              Contact Name *
-            </label>
-            <input
-              type="text"
-              name="contactName"
-              className={`w-full px-4 py-3 rounded-lg border ${
-                validationErrors.contactName ? 'border-red-500' : 'border-gray-300'
-              } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-              value={deliveryDetails.contactName}
-              onChange={handleDeliveryChange}
-              placeholder="Your full name"
-            />
-            {validationErrors.contactName && (
-              <p className="mt-1 text-sm text-red-500">{validationErrors.contactName}</p>
-            )}
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
-              <FiPhone className="text-gray-400" />
-              Contact Number *
-            </label>
-            <input
-              type="tel"
-              name="contactNumber"
-              className={`w-full px-4 py-3 rounded-lg border ${
-                validationErrors.contactNumber ? 'border-red-500' : 'border-gray-300'
-              } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-              value={deliveryDetails.contactNumber}
-              onChange={handleDeliveryChange}
-              placeholder="10-digit mobile number"
-              maxLength="10"
-            />
-            {validationErrors.contactNumber && (
-              <p className="mt-1 text-sm text-red-500">{validationErrors.contactNumber}</p>
-            )}
+        <div className="p-6">
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                <FiHome className="text-orange-500" />
+                Delivery Address *
+              </label>
+              <textarea
+                name="deliveryAddress"
+                rows="3"
+                className={`w-full px-4 py-3 rounded-xl border ${
+                  validationErrors.deliveryAddress ? 'border-red-500' : 'border-gray-200'
+                } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition resize-none`}
+                value={deliveryDetails.deliveryAddress}
+                onChange={handleDeliveryChange}
+                placeholder="Enter your complete delivery address"
+              />
+              {validationErrors.deliveryAddress && (
+                <p className="mt-1 text-sm text-red-500">{validationErrors.deliveryAddress}</p>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                  <FiUser className="text-orange-500" />
+                  Contact Name *
+                </label>
+                <input
+                  type="text"
+                  name="contactName"
+                  className={`w-full px-4 py-3 rounded-xl border ${
+                    validationErrors.contactName ? 'border-red-500' : 'border-gray-200'
+                  } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition`}
+                  value={deliveryDetails.contactName}
+                  onChange={handleDeliveryChange}
+                  placeholder="Your full name"
+                />
+                {validationErrors.contactName && (
+                  <p className="mt-1 text-sm text-red-500">{validationErrors.contactName}</p>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                  <FiPhone className="text-orange-500" />
+                  Contact Number *
+                </label>
+                <input
+                  type="tel"
+                  name="contactNumber"
+                  className={`w-full px-4 py-3 rounded-xl border ${
+                    validationErrors.contactNumber ? 'border-red-500' : 'border-gray-200'
+                  } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition`}
+                  value={deliveryDetails.contactNumber}
+                  onChange={handleDeliveryChange}
+                  placeholder="10-digit mobile number"
+                  maxLength="10"
+                />
+                {validationErrors.contactNumber && (
+                  <p className="mt-1 text-sm text-red-500">{validationErrors.contactNumber}</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -690,211 +915,214 @@ const CheckoutPage = () => {
   // Payment Step
   const renderPayment = () => (
     <div className="max-w-2xl mx-auto">
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <FiCreditCard className="text-blue-600 text-xl" />
-          Payment Method
-        </h3>
-        <hr className="border-gray-200 mb-6" />
-        
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <label className={`border rounded-lg p-4 cursor-pointer transition ${
-            paymentMethod === 'card' 
-              ? 'border-blue-500 bg-blue-50' 
-              : 'border-gray-300 hover:border-gray-400'
-          }`}>
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="card"
-              checked={paymentMethod === 'card'}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="hidden"
-            />
-            <div className="flex flex-col items-center gap-2">
-              <FiCreditCard className={`text-2xl ${paymentMethod === 'card' ? 'text-blue-500' : 'text-gray-400'}`} />
-              <span className={`text-sm font-medium ${paymentMethod === 'card' ? 'text-blue-500' : 'text-gray-600'}`}>
-                Credit Card
-              </span>
-            </div>
-          </label>
-          
-          <label className={`border rounded-lg p-4 cursor-pointer transition ${
-            paymentMethod === 'debit' 
-              ? 'border-blue-500 bg-blue-50' 
-              : 'border-gray-300 hover:border-gray-400'
-          }`}>
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="debit"
-              checked={paymentMethod === 'debit'}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="hidden"
-            />
-            <div className="flex flex-col items-center gap-2">
-              <FiCreditCard className={`text-2xl ${paymentMethod === 'debit' ? 'text-blue-500' : 'text-gray-400'}`} />
-              <span className={`text-sm font-medium ${paymentMethod === 'debit' ? 'text-blue-500' : 'text-gray-600'}`}>
-                Debit Card
-              </span>
-            </div>
-          </label>
-          
-          <label className={`border rounded-lg p-4 cursor-pointer transition ${
-            paymentMethod === 'upi' 
-              ? 'border-blue-500 bg-blue-50' 
-              : 'border-gray-300 hover:border-gray-400'
-          }`}>
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="upi"
-              checked={paymentMethod === 'upi'}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="hidden"
-            />
-            <div className="flex flex-col items-center gap-2">
-              <span className={`text-2xl ${paymentMethod === 'upi' ? 'text-blue-500' : 'text-gray-400'}`}>UPI</span>
-              <span className={`text-sm font-medium ${paymentMethod === 'upi' ? 'text-blue-500' : 'text-gray-600'}`}>
-                UPI
-              </span>
-            </div>
-          </label>
-          
-          <label className={`border rounded-lg p-4 cursor-pointer transition ${
-            paymentMethod === 'cash' 
-              ? 'border-blue-500 bg-blue-50' 
-              : 'border-gray-300 hover:border-gray-400'
-          }`}>
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="cash"
-              checked={paymentMethod === 'cash'}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="hidden"
-            />
-            <div className="flex flex-col items-center gap-2">
-              <FaMoneyBillWave className={`text-2xl ${paymentMethod === 'cash' ? 'text-blue-500' : 'text-gray-400'}`} />
-              <span className={`text-sm font-medium ${paymentMethod === 'cash' ? 'text-blue-500' : 'text-gray-600'}`}>
-                Cash on Delivery
-              </span>
-            </div>
-          </label>
+      <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-orange-500 to-red-500 px-6 py-4">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <FiCreditCard className="text-xl" />
+            Payment Method
+          </h3>
         </div>
         
-        {(paymentMethod === 'card' || paymentMethod === 'debit') && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Card Number *</label>
+        <div className="p-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <label className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
+              paymentMethod === 'card' 
+                ? 'border-orange-500 bg-orange-50 shadow-md' 
+                : 'border-gray-200 hover:border-gray-300'
+            }`}>
               <input
-                type="text"
-                name="cardNumber"
-                className={`w-full px-4 py-3 rounded-lg border ${
-                  validationErrors.cardNumber ? 'border-red-500' : 'border-gray-300'
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-                value={paymentDetails.cardNumber}
-                onChange={handlePaymentChange}
-                placeholder="1234 5678 9012 3456"
-                maxLength="19"
+                type="radio"
+                name="paymentMethod"
+                value="card"
+                checked={paymentMethod === 'card'}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="hidden"
               />
-              {validationErrors.cardNumber && (
-                <p className="mt-1 text-sm text-red-500">{validationErrors.cardNumber}</p>
-              )}
-            </div>
+              <div className="flex flex-col items-center gap-2">
+                <FiCreditCard className={`text-2xl ${paymentMethod === 'card' ? 'text-orange-500' : 'text-gray-400'}`} />
+                <span className={`text-sm font-medium ${paymentMethod === 'card' ? 'text-orange-500' : 'text-gray-600'}`}>
+                  Credit Card
+                </span>
+              </div>
+            </label>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Name on Card *</label>
+            <label className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
+              paymentMethod === 'debit' 
+                ? 'border-orange-500 bg-orange-50 shadow-md' 
+                : 'border-gray-200 hover:border-gray-300'
+            }`}>
               <input
-                type="text"
-                name="cardName"
-                className={`w-full px-4 py-3 rounded-lg border ${
-                  validationErrors.cardName ? 'border-red-500' : 'border-gray-300'
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-                value={paymentDetails.cardName}
-                onChange={handlePaymentChange}
-                placeholder="John Doe"
+                type="radio"
+                name="paymentMethod"
+                value="debit"
+                checked={paymentMethod === 'debit'}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="hidden"
               />
-              {validationErrors.cardName && (
-                <p className="mt-1 text-sm text-red-500">{validationErrors.cardName}</p>
-              )}
-            </div>
+              <div className="flex flex-col items-center gap-2">
+                <FiCreditCard className={`text-2xl ${paymentMethod === 'debit' ? 'text-orange-500' : 'text-gray-400'}`} />
+                <span className={`text-sm font-medium ${paymentMethod === 'debit' ? 'text-orange-500' : 'text-gray-600'}`}>
+                  Debit Card
+                </span>
+              </div>
+            </label>
             
-            <div className="grid grid-cols-2 gap-4">
+            <label className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
+              paymentMethod === 'upi' 
+                ? 'border-orange-500 bg-orange-50 shadow-md' 
+                : 'border-gray-200 hover:border-gray-300'
+            }`}>
+              <input
+                type="radio"
+                name="paymentMethod"
+                value="upi"
+                checked={paymentMethod === 'upi'}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="hidden"
+              />
+              <div className="flex flex-col items-center gap-2">
+                <span className={`text-2xl font-bold ${paymentMethod === 'upi' ? 'text-orange-500' : 'text-gray-400'}`}>UPI</span>
+                <span className={`text-sm font-medium ${paymentMethod === 'upi' ? 'text-orange-500' : 'text-gray-600'}`}>
+                  UPI
+                </span>
+              </div>
+            </label>
+            
+            <label className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
+              paymentMethod === 'cash' 
+                ? 'border-orange-500 bg-orange-50 shadow-md' 
+                : 'border-gray-200 hover:border-gray-300'
+            }`}>
+              <input
+                type="radio"
+                name="paymentMethod"
+                value="cash"
+                checked={paymentMethod === 'cash'}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="hidden"
+              />
+              <div className="flex flex-col items-center gap-2">
+                <FaMoneyBillWave className={`text-2xl ${paymentMethod === 'cash' ? 'text-orange-500' : 'text-gray-400'}`} />
+                <span className={`text-sm font-medium ${paymentMethod === 'cash' ? 'text-orange-500' : 'text-gray-600'}`}>
+                  Cash on Delivery
+                </span>
+              </div>
+            </label>
+          </div>
+          
+          {(paymentMethod === 'card' || paymentMethod === 'debit') && (
+            <div className="space-y-4 animate-fadeIn">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Card Number *</label>
                 <input
                   type="text"
-                  name="expiry"
-                  className={`w-full px-4 py-3 rounded-lg border ${
-                    validationErrors.expiry ? 'border-red-500' : 'border-gray-300'
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-                  value={paymentDetails.expiry}
+                  name="cardNumber"
+                  className={`w-full px-4 py-3 rounded-xl border ${
+                    validationErrors.cardNumber ? 'border-red-500' : 'border-gray-200'
+                  } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition`}
+                  value={paymentDetails.cardNumber}
                   onChange={handlePaymentChange}
-                  placeholder="MM/YY"
-                  maxLength="5"
+                  placeholder="1234 5678 9012 3456"
+                  maxLength="19"
                 />
-                {validationErrors.expiry && (
-                  <p className="mt-1 text-sm text-red-500">{validationErrors.expiry}</p>
+                {validationErrors.cardNumber && (
+                  <p className="mt-1 text-sm text-red-500">{validationErrors.cardNumber}</p>
                 )}
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">CVV *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name on Card *</label>
                 <input
-                  type="password"
-                  name="cvv"
-                  className={`w-full px-4 py-3 rounded-lg border ${
-                    validationErrors.cvv ? 'border-red-500' : 'border-gray-300'
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-                  value={paymentDetails.cvv}
+                  type="text"
+                  name="cardName"
+                  className={`w-full px-4 py-3 rounded-xl border ${
+                    validationErrors.cardName ? 'border-red-500' : 'border-gray-200'
+                  } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition`}
+                  value={paymentDetails.cardName}
                   onChange={handlePaymentChange}
-                  placeholder="123"
-                  maxLength="3"
+                  placeholder="John Doe"
                 />
-                {validationErrors.cvv && (
-                  <p className="mt-1 text-sm text-red-500">{validationErrors.cvv}</p>
+                {validationErrors.cardName && (
+                  <p className="mt-1 text-sm text-red-500">{validationErrors.cardName}</p>
                 )}
               </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date *</label>
+                  <input
+                    type="text"
+                    name="expiry"
+                    className={`w-full px-4 py-3 rounded-xl border ${
+                      validationErrors.expiry ? 'border-red-500' : 'border-gray-200'
+                    } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition`}
+                    value={paymentDetails.expiry}
+                    onChange={handlePaymentChange}
+                    placeholder="MM/YY"
+                    maxLength="5"
+                  />
+                  {validationErrors.expiry && (
+                    <p className="mt-1 text-sm text-red-500">{validationErrors.expiry}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">CVV *</label>
+                  <input
+                    type="password"
+                    name="cvv"
+                    className={`w-full px-4 py-3 rounded-xl border ${
+                      validationErrors.cvv ? 'border-red-500' : 'border-gray-200'
+                    } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition`}
+                    value={paymentDetails.cvv}
+                    onChange={handlePaymentChange}
+                    placeholder="123"
+                    maxLength="3"
+                  />
+                  {validationErrors.cvv && (
+                    <p className="mt-1 text-sm text-red-500">{validationErrors.cvv}</p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-        
-        {paymentMethod === 'upi' && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">UPI ID *</label>
-              <input
-                type="text"
-                name="upiId"
-                className={`w-full px-4 py-3 rounded-lg border ${
-                  validationErrors.upiId ? 'border-red-500' : 'border-gray-300'
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition`}
-                value={paymentDetails.upiId}
-                onChange={handlePaymentChange}
-                placeholder="username@okhdfcbank"
-              />
-              {validationErrors.upiId && (
-                <p className="mt-1 text-sm text-red-500">{validationErrors.upiId}</p>
-              )}
+          )}
+          
+          {paymentMethod === 'upi' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">UPI ID *</label>
+                <input
+                  type="text"
+                  name="upiId"
+                  className={`w-full px-4 py-3 rounded-xl border ${
+                    validationErrors.upiId ? 'border-red-500' : 'border-gray-200'
+                  } focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition`}
+                  value={paymentDetails.upiId}
+                  onChange={handlePaymentChange}
+                  placeholder="username@okhdfcbank"
+                />
+                {validationErrors.upiId && (
+                  <p className="mt-1 text-sm text-red-500">{validationErrors.upiId}</p>
+                )}
+              </div>
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 flex items-start gap-3">
+                <span className="text-blue-500 text-xl">📱</span>
+                <p className="text-sm text-blue-700">
+                  You will receive a payment request on your UPI app to complete the transaction.
+                </p>
+              </div>
             </div>
-            <div className="bg-blue-50 rounded-lg p-4 flex items-start gap-3">
-              <span className="text-blue-500 text-xl">📱</span>
-              <p className="text-sm text-blue-700">
-                You will receive a payment request on your UPI app to complete the transaction.
+          )}
+          
+          {paymentMethod === 'cash' && (
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 flex items-start gap-3">
+              <FaMoneyBillWave className="text-green-500 text-xl flex-shrink-0 mt-1" />
+              <p className="text-sm text-green-700">
+                Pay with cash when your order is delivered. Please have exact change if possible.
               </p>
             </div>
-          </div>
-        )}
-        
-        {paymentMethod === 'cash' && (
-          <div className="bg-blue-50 rounded-lg p-4 flex items-start gap-3">
-            <FaMoneyBillWave className="text-blue-500 text-xl flex-shrink-0 mt-1" />
-            <p className="text-sm text-blue-700">
-              Pay with cash when your order is delivered. Please have exact change if possible.
-            </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -902,23 +1130,30 @@ const CheckoutPage = () => {
   // Confirmation Step
   const renderConfirmation = () => (
     <div className="max-w-md mx-auto">
-      <div className="bg-white rounded-xl shadow-sm p-8 text-center">
-        <FiCheckCircle className="text-green-500 text-6xl mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Order Confirmed!</h2>
+      <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+        <div className="w-20 h-20 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
+          <FiCheckCircle className="text-white text-4xl" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Order Confirmed! 🎉</h2>
         <p className="text-gray-600 mb-6">
           Thank you for your order. Your order has been placed successfully.
         </p>
         
         {createdOrder && (
-          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <h3 className="font-semibold text-gray-800 mb-2">Order #{createdOrder.orderId || createdOrder.id}</h3>
-            <div className="inline-flex items-center gap-2 bg-yellow-100 text-yellow-700 px-4 py-2 rounded-full">
+          <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-4 mb-6">
+            <h3 className="font-semibold text-gray-800 mb-2">Order #{createdOrder.id}</h3>
+            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-yellow-400 to-orange-400 text-white px-4 py-2 rounded-full shadow-md">
               <FiTruck />
               <span className="text-sm font-medium">Preparing your order</span>
             </div>
             <p className="text-sm text-gray-600 mt-2">
-              Total: {formatINR(createdOrder.total || total)}
+              Total: {formatINR(createdOrder.totalAmount || total)}
             </p>
+            {appliedPromo && (
+              <p className="text-xs text-green-600 mt-1">
+                Promo savings: {formatINR(promoDiscount)}
+              </p>
+            )}
           </div>
         )}
         
@@ -928,13 +1163,13 @@ const CheckoutPage = () => {
         
         <div className="space-y-3">
           <Link href="/orders" className="block w-full">
-            <button className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+            <button className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transition-all">
               View My Orders
             </button>
           </Link>
           
           <Link href="/" className="block w-full">
-            <button className="w-full border border-gray-300 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors">
+            <button className="w-full border-2 border-gray-200 text-gray-700 px-6 py-3 rounded-xl font-medium hover:bg-gray-50 transition-all">
               Continue Shopping
             </button>
           </Link>
@@ -962,26 +1197,28 @@ const CheckoutPage = () => {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Checkout</h1>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-8">
+            Checkout
+          </h1>
           
           {/* Stepper */}
           <div className="flex justify-between items-center mb-8 relative">
-            <div className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200"></div>
+            <div className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200 rounded-full"></div>
             {steps.map((label, index) => (
-              <div key={label} className="relative z-10 flex flex-col items-center bg-gray-50 px-4">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold mb-2 ${
+              <div key={label} className="relative z-10 flex flex-col items-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold mb-2 transition-all ${
                   index <= activeStep 
                     ? index < activeStep 
-                      ? 'bg-green-500 text-white' 
-                      : 'bg-blue-600 text-white'
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg' 
+                      : 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
                     : 'bg-white border-2 border-gray-300 text-gray-400'
                 }`}>
                   {index + 1}
                 </div>
                 <span className={`text-sm font-medium ${
-                  index <= activeStep ? 'text-gray-900' : 'text-gray-400'
+                  index <= activeStep ? 'text-gray-800' : 'text-gray-400'
                 }`}>
                   {label}
                 </span>
@@ -989,9 +1226,19 @@ const CheckoutPage = () => {
             ))}
           </div>
           
+          {promoSuccess && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl flex items-center gap-3 text-green-700">
+              <FiCheckCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm flex-1">Promo code applied successfully!</p>
+            </div>
+          )}
+          
           {error && (
-            <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg flex justify-between items-center">
-              <span>{error}</span>
+            <div className="mb-6 bg-gradient-to-r from-red-50 to-red-100 border border-red-200 text-red-600 px-4 py-3 rounded-xl flex justify-between items-center">
+              <span className="flex items-center gap-2">
+                <FiAlertCircle />
+                {error}
+              </span>
               <button className="text-red-500 hover:text-red-600" onClick={() => setError('')}>×</button>
             </div>
           )}
@@ -1004,7 +1251,7 @@ const CheckoutPage = () => {
               
               <div className="flex justify-between mt-8 max-w-2xl mx-auto">
                 <button
-                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-8 py-3 border-2 border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleBack}
                   disabled={activeStep === 0}
                 >
@@ -1013,7 +1260,7 @@ const CheckoutPage = () => {
                 </button>
                 
                 <button
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-8 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   onClick={handleNext}
                   disabled={loading || cartItems.length === 0}
                 >
@@ -1037,6 +1284,22 @@ const CheckoutPage = () => {
         </div>
       </div>
       <Footer />
+      
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
+        }
+      `}</style>
     </>
   );
 };

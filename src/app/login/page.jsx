@@ -30,7 +30,7 @@ export default function LoginPage() {
         setError('Please use the partner login portal');
         // Optional: redirect to partner login after 2 seconds
         setTimeout(() => {
-          router.push('/partner/login');
+          router.push('/Login');
         }, 2000);
       } else if (result.user && result.user.role === 'admin') {
         setError('Please use the admin login portal');
@@ -237,7 +237,7 @@ export default function LoginPage() {
             <p className="text-xs text-gray-500">
               Are you a restaurant partner?{' '}
               <Link 
-                href="/partner/login" 
+                href="/Login" 
                 className="text-purple-600 hover:text-purple-500 hover:underline transition duration-200"
               >
                 Partner Login
